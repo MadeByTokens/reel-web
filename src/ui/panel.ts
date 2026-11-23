@@ -120,6 +120,7 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
     if (!added.length) return;
     const at = ed.time;
     let last: Clip | null = null;
+    let first: Clip | null = null;
     ed.edit((p) => {
       for (const info of added) {
         p.media.push(info);
@@ -138,8 +139,11 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
           addAudio(p, clip, last ? clipEnd(last) : at);
         }
         last = clip;
+        first ??= clip;
       }
     });
+    // Show what was just added; the next clip added then lands after it.
+    if (where === 'primary' && first) ed.seek((first as Clip).start);
     if (where !== 'primary' && last) ed.select((last as Clip).id);
   }
 

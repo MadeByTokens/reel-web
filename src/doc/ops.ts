@@ -85,14 +85,10 @@ export function primaryAt(p: Project, t: number): Found | null {
   return null;
 }
 
-/** Adds a clip to the primary track after the clip under the playhead. Returns where it starts. */
+/** Adds a clip to the primary track straight after the clip under the playhead. */
 export function insertPrimary(p: Project, clip: Clip, playhead: number): void {
   const here = primaryAt(p, playhead);
-  let index = p.primary.length;
-  if (here) {
-    // In the first half of a clip the new one goes before it, otherwise after.
-    index = playhead < here.clip.start + here.clip.duration / 2 ? here.index : here.index + 1;
-  }
+  const index = here ? here.index + 1 : p.primary.length;
   clip.row = 0;
   p.primary.splice(index, 0, clip);
   layoutPrimary(p);

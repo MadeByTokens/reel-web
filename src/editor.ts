@@ -190,7 +190,8 @@ export class Editor {
   }
 
   private swap(from: string[], to: string[]): void {
-    if (this.pendingBase !== null) return;
+    // An edit left open (a slider that never reported its release) is finished first.
+    if (this.pendingBase !== null) this.commit();
     const snapshot = from.pop();
     if (snapshot === undefined) return;
     this.player.pause();

@@ -44,15 +44,19 @@ describe('main track', () => {
     expect(projectDuration(p)).toBe(14.5);
   });
 
-  it('inserts before or after the clip under the playhead', () => {
-    const { p, video } = sample();
-    const early = makeClip('image', 2, { mediaId: 'i' });
-    insertPrimary(p, early, 1);
-    expect(p.primary[0]!.id).toBe(early.id);
-    expect(video.start).toBe(2);
-    const late = makeClip('image', 2, { mediaId: 'i' });
-    insertPrimary(p, late, 11);
-    expect(p.primary.map((c) => c.id).indexOf(late.id)).toBe(2);
+  it('inserts after the clip under the playhead', () => {
+    const { p, video, photo } = sample();
+    const middle = makeClip('image', 2, { mediaId: 'i' });
+    insertPrimary(p, middle, 1);
+    expect(p.primary.map((c) => c.id)).toEqual([video.id, middle.id, photo.id]);
+    expect(photo.start).toBe(12);
+    // At a cut the clip that starts there is the one under the playhead.
+    const next = makeClip('image', 2, { mediaId: 'i' });
+    insertPrimary(p, next, 10);
+    expect(p.primary.map((c) => c.id)).toEqual([video.id, middle.id, next.id, photo.id]);
+    const last = makeClip('image', 2, { mediaId: 'i' });
+    insertPrimary(p, last, 500);
+    expect(p.primary[4]!.id).toBe(last.id);
   });
 
   it('splits a video and keeps the source in step', () => {

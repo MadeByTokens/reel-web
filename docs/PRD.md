@@ -1,8 +1,16 @@
 # Reel: product requirements
 
-Status: draft, written 2026-11-23, before any code. Nothing here has been built or measured.
-Technical statements marked **(verify)** come from memory or from one search and must be
-checked against current documentation or a spike before anything depends on them.
+Status: written 2026-11-23 before any code; a first version was built straight after (see
+the README for what exists). Two things in this document were skipped to get there and are
+still owed: the review of the technical approach with the owner (section 11, step 2) and the
+two device spikes (steps 3 and 4), so nothing about speed or codec support has been measured
+on a tablet yet. Technical statements marked **(verify)** come from memory or from one search
+and remain unchecked unless the README says otherwise.
+
+What was built differs from section 8 in three ways: the preview uses the browser's own
+video player for pictures (muted `<video>` elements kept in step with the playhead) and
+WebCodecs only for sound and for export; frames are composited on a 2D canvas, not WebGL2;
+and timeline thumbnails are made on the main thread from a hidden video element.
 
 ## 1. Summary
 
