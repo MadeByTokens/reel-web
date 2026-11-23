@@ -48,15 +48,16 @@ export function isBusy(): boolean {
   return busyCount > 0;
 }
 
-async function deliver(blob: Blob, name: string): Promise<void> {
+/** Resolves false when the user closed the share sheet without choosing anything. */
+async function deliver(blob: Blob, name: string): Promise<boolean> {
   const file = new File([blob], name, { type: blob.type });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      return;
+      return true;
     } catch (err) {
       // Closing the share sheet is not an error; anything else falls back to a download.
-      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (err instanceof DOMException && err.name === 'AbortError') return false;
     }
   }
   const link = document.createElement('a');
@@ -64,6 +65,7 @@ async function deliver(blob: Blob, name: string): Promise<void> {
   link.download = name;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+  return true;
 }
 
 /**
@@ -87,7 +89,10 @@ export function saveFile(blob: Blob, name: string, notes: string[] = []): Promis
       resolve();
     };
     const onSave = (): void => {
-      void deliver(blob, name).then(done);
+      // A share sheet closed by accident must not throw the finished file away: stay open.
+      void deliver(blob, name).then((saved) => {
+        if (saved) done();
+      });
     };
     save.addEventListener('click', onSave);
     close.addEventListener('click', done);

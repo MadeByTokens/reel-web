@@ -20,11 +20,15 @@ export interface LoadedMedia {
   info: MediaInfo;
   blob: Blob;
   url: string;
-  /** Pictures only: the decoded picture. */
-  image: ImageBitmap | HTMLCanvasElement | null;
 }
 
-const MAX_IMAGE_SIDE = 2560;
+export type Picture = ImageBitmap | HTMLCanvasElement;
+
+const MAX_IMAGE_SIDE = 2048;
+/** Full-size pictures kept decoded at once; each can be 16 MB. */
+const PICTURES_KEPT = 8;
+/** A thumbnail player with nothing left to do is let go after this long. */
+const THUMB_IDLE_MS = 8000;
 const THUMB_HEIGHT = 72;
 /** Files larger than this are not decoded whole when the streaming decoder is unavailable. */
 const MAX_WHOLE_DECODE = 300 << 20;
@@ -170,9 +174,18 @@ export class MediaLibrary {
   private readonly thumbQueue: { id: string; slot: number }[] = [];
   private readonly thumbVideos = new Map<string, HTMLVideoElement>();
   private thumbBusy = false;
+  private thumbIdle = 0;
+  /** Videos whose frames could not be read once are not tried again. */
+  private readonly thumbFailed = new Set<string>();
+  /** Decoded pictures, most recently used last. */
+  private readonly pictures = new Map<string, Picture>();
+  private readonly pictureLoads = new Map<string, Promise<Picture | null>>();
+  private readonly pictureThumbs = new Map<string, HTMLCanvasElement>();
   private disposed = false;
   /** Called when a new thumbnail is ready, so the timeline can redraw. */
   onThumb: () => void = () => {};
+  /** Called when a full-size picture has been decoded, so the preview can repaint. */
+  onPicture: () => void = () => {};
 
   constructor(
     private readonly store: Store,
@@ -204,15 +217,63 @@ export class MediaLibrary {
   private async adopt(info: MediaInfo, file: Blob): Promise<void> {
     // Stored files lose their content type; give it back so players accept the URL.
     const blob = info.mime && file.type !== info.mime ? file.slice(0, file.size, info.mime) : file;
-    let image: LoadedMedia['image'] = null;
-    if (info.kind === 'image') {
-      try {
-        image = await decodeImage(blob);
-      } catch {
-        image = null;
-      }
+    this.items.set(info.id, { info, blob, url: URL.createObjectURL(blob) });
+  }
+
+  /** The decoded picture if it is ready; otherwise starts decoding it and returns null. */
+  picture(id: string | undefined): Picture | null {
+    if (!id) return null;
+    const hit = this.pictures.get(id);
+    if (hit) {
+      // Move to the end: most recently used.
+      this.pictures.delete(id);
+      this.pictures.set(id, hit);
+      return hit;
     }
-    this.items.set(info.id, { info, blob, url: URL.createObjectURL(blob), image });
+    void this.loadPicture(id);
+    return null;
+  }
+
+  /** Decodes a picture, keeping only the most recently used few in memory. */
+  loadPicture(id: string): Promise<Picture | null> {
+    const hit = this.pictures.get(id);
+    if (hit) return Promise.resolve(this.picture(id));
+    let load = this.pictureLoads.get(id);
+    if (!load) {
+      load = (async () => {
+        const item = this.items.get(id);
+        if (!item || item.info.kind !== 'image') return null;
+        try {
+          const picture = await decodeImage(item.blob);
+          if (this.disposed || !this.items.has(id)) {
+            if ('close' in picture) picture.close();
+            return null;
+          }
+          this.pictures.set(id, picture);
+          if (!this.pictureThumbs.has(id)) {
+            const small = document.createElement('canvas');
+            small.height = THUMB_HEIGHT;
+            small.width = Math.max(2, Math.round((THUMB_HEIGHT * picture.width) / Math.max(1, picture.height)));
+            small.getContext('2d')!.drawImage(picture, 0, 0, small.width, small.height);
+            this.pictureThumbs.set(id, small);
+            this.onThumb();
+          }
+          while (this.pictures.size > PICTURES_KEPT) {
+            const [oldest, old] = this.pictures.entries().next().value!;
+            this.pictures.delete(oldest);
+            if ('close' in old) old.close();
+          }
+          this.onPicture();
+          return picture;
+        } catch {
+          return null;
+        } finally {
+          this.pictureLoads.delete(id);
+        }
+      })();
+      this.pictureLoads.set(id, load);
+    }
+    return load;
   }
 
   /** Copies a file into the project and returns what it is. */
@@ -231,8 +292,18 @@ export class MediaLibrary {
       mime: /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,60}$/i.test(file.type) ? file.type : '',
       ...found,
     };
-    await this.store.write(this.path(info), file, onProgress);
+    try {
+      await this.store.write(this.path(info), file, onProgress);
+    } catch (err) {
+      // A copy cut short (storage full) must not stay behind eating what space is left.
+      await this.store.remove(this.path(info)).catch(() => {});
+      throw err instanceof Error && /full|quota/i.test(err.message) ? new Error('There is not enough storage left for this file') : err;
+    }
     const stored = (await this.store.file(this.path(info))) ?? file;
+    if (stored.size !== file.size) {
+      await this.store.remove(this.path(info)).catch(() => {});
+      throw new Error('The file could not be copied completely');
+    }
     await this.adopt(info, stored);
     return info;
   }
@@ -244,6 +315,10 @@ export class MediaLibrary {
     this.inputs.get(info.id)?.dispose();
     this.inputs.delete(info.id);
     this.audio.delete(info.id);
+    const picture = this.pictures.get(info.id);
+    if (picture && 'close' in picture) picture.close();
+    this.pictures.delete(info.id);
+    this.pictureThumbs.delete(info.id);
     this.thumbs.delete(info.id);
     const thumbVideo = this.thumbVideos.get(info.id);
     if (thumbVideo) releaseVideo(thumbVideo);
@@ -329,8 +404,12 @@ export class MediaLibrary {
   thumb(id: string, time: number): CanvasImageSource | null {
     const item = this.items.get(id);
     if (!item) return null;
-    if (item.info.kind === 'image') return item.image;
-    if (item.info.kind !== 'video') return null;
+    if (item.info.kind === 'image') {
+      const small = this.pictureThumbs.get(id);
+      if (!small) void this.loadPicture(id);
+      return small ?? null;
+    }
+    if (item.info.kind !== 'video' || this.thumbFailed.has(id)) return null;
     const step = this.thumbStep(item.info);
     const slot = Math.max(0, Math.floor(time / step));
     let cache = this.thumbs.get(id);
@@ -352,23 +431,29 @@ export class MediaLibrary {
   private async pumpThumbs(): Promise<void> {
     if (this.thumbBusy) return;
     this.thumbBusy = true;
+    window.clearTimeout(this.thumbIdle);
     try {
       while (this.thumbQueue.length && !this.disposed) {
         const { id, slot } = this.thumbQueue.shift()!;
         const item = this.items.get(id);
-        if (!item) continue;
+        if (!item || this.thumbFailed.has(id)) continue;
         try {
           await this.makeThumb(item, slot);
           this.onThumb();
         } catch {
-          // A frame that cannot be read leaves a plain block in the timeline.
-          const blank = document.createElement('canvas');
-          blank.width = blank.height = 2;
-          this.thumbs.get(id)?.set(slot, blank);
+          // Frames of this file cannot be read here: leave plain blocks, and do not make
+          // every other thumbnail wait for the same failure.
+          this.thumbFailed.add(id);
         }
       }
     } finally {
       this.thumbBusy = false;
+      // The hidden players hold decoders; let them go once the strip has been quiet a while.
+      this.thumbIdle = window.setTimeout(() => {
+        if (this.thumbBusy) return;
+        for (const video of this.thumbVideos.values()) releaseVideo(video);
+        this.thumbVideos.clear();
+      }, THUMB_IDLE_MS);
     }
   }
 
@@ -395,12 +480,22 @@ export class MediaLibrary {
     this.thumbs.get(item.info.id)?.set(slot, canvas);
   }
 
+  /** Removes stored files that the project does not list: copies left by an import that never finished. */
+  async sweep(infos: MediaInfo[]): Promise<void> {
+    const known = new Set(infos.map((m) => m.id));
+    for (const name of await this.store.list(`${this.folder}/media`)) {
+      const id = name.split('.')[0]!;
+      if (!known.has(id)) await this.store.remove(`${this.folder}/media/${name}`).catch(() => {});
+    }
+  }
+
   dispose(): void {
     this.disposed = true;
-    for (const item of this.items.values()) {
-      URL.revokeObjectURL(item.url);
-      if (item.image && 'close' in item.image) item.image.close();
-    }
+    window.clearTimeout(this.thumbIdle);
+    for (const item of this.items.values()) URL.revokeObjectURL(item.url);
+    for (const picture of this.pictures.values()) if ('close' in picture) picture.close();
+    this.pictures.clear();
+    this.pictureThumbs.clear();
     for (const input of this.inputs.values()) input.dispose();
     for (const video of this.thumbVideos.values()) releaseVideo(video);
     this.items.clear();

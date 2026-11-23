@@ -6,6 +6,7 @@ import {
   audibleBetween,
   deleteClip,
   duplicateClip,
+  fades,
   findClip,
   gainAt,
   insertPrimary,
@@ -144,7 +145,65 @@ describe('main track', () => {
   });
 });
 
+describe('clips whose source does not end on a frame', () => {
+  function odd(): { p: Project; video: Clip; photo: Clip } {
+    const p = newProject('Odd', 1920, 1080);
+    p.media.push(media('v', 'video', 3.35), media('i', 'image', 0));
+    const video = makeClip('video', 3.3, { mediaId: 'v' });
+    const photo = makeClip('image', 2, { mediaId: 'i' });
+    insertPrimary(p, video, 0);
+    insertPrimary(p, photo, 5);
+    return { p, video, photo };
+  }
+
+  it('stretching to the end leaves no hole before the next clip', () => {
+    const { p, video, photo } = odd();
+    trimEnd(p, video.id, 99);
+    expect(video.duration * p.fps).toBeCloseTo(Math.round(video.duration * p.fps), 6);
+    expect(video.duration).toBeLessThanOrEqual(3.35);
+    expect(photo.start).toBeCloseTo(video.duration, 9);
+    for (let t = 0; t < photo.start + 1; t += 1 / 250) expect(visibleAt(p, t)).toHaveLength(1);
+  });
+
+  it('even a clip that does end off the frame grid is shown up to the next one', () => {
+    const { p, video, photo } = odd();
+    video.duration = 3.35;
+    photo.start = 3.3667;
+    expect(visibleAt(p, 3.36).map((c) => c.id)).toEqual([video.id]);
+  });
+
+  it('changing speed there and back never reaches past the piece first chosen', () => {
+    const p = newProject('Speed', 1920, 1080);
+    p.media.push(media('v', 'video', 60));
+    const video = makeClip('video', 10, { mediaId: 'v' });
+    insertPrimary(p, video, 0);
+    for (const s of [8, 1, 3, 1, 0.25, 1, 1.5, 1]) {
+      setSpeed(p, video.id, s);
+      expect(video.duration * video.speed).toBeLessThanOrEqual(10 + 1e-9);
+    }
+    expect(video.duration).toBeGreaterThan(9.5);
+    setSpeed(p, video.id, 8);
+    setSpeed(p, video.id, 1);
+    expect(video.duration).toBeLessThanOrEqual(10);
+  });
+});
+
 describe('layers and sound', () => {
+  it('shortens fades that do not both fit in the clip', () => {
+    const clip = makeClip('audio', 4, { mediaId: 'a', fadeIn: 3, fadeOut: 3 });
+    expect(fades(clip)).toEqual({ fadeIn: 2, fadeOut: 2 });
+    expect(gainAt(clip, 1)).toBeCloseTo(0.5, 5);
+    expect(gainAt(clip, 2)).toBeCloseTo(1, 5);
+    expect(gainAt(clip, 3)).toBeCloseTo(0.5, 5);
+    // Never louder in the middle than at full volume, never a jump.
+    let last = 0;
+    for (let t = 0; t <= 4; t += 0.05) {
+      const g = gainAt(clip, t);
+      expect(Math.abs(g - last)).toBeLessThan(0.05);
+      last = g;
+    }
+  });
+
   it('puts overlapping layers on separate rows', () => {
     const { p } = sample();
     const a = makeClip('text', 4, { text: { text: 'a', color: '#ffffff', font: 'Sans', size: 0.1, bold: true, align: 'center', outline: '', background: '' } });

@@ -8,6 +8,8 @@ import type { WorkerReply, WriteRequest } from './worker';
 export interface Store {
   /** False when everything is lost on reload. */
   readonly persistent: boolean;
+  /** Set when files are kept on the device but could not be written at start-up (usually: storage is full). */
+  readonly writeProblem: string | null;
   file(path: string): Promise<Blob | null>;
   write(path: string, data: Blob | Uint8Array, onProgress?: (fraction: number) => void): Promise<void>;
   /** Removes a file or a whole folder. */
@@ -28,6 +30,7 @@ export interface PositionedChunk {
 
 export class MemoryStore implements Store {
   readonly persistent = false;
+  readonly writeProblem = null;
   readonly files = new Map<string, Blob>();
 
   async file(path: string): Promise<Blob | null> {
@@ -61,6 +64,9 @@ type Directory = FileSystemDirectoryHandle & { keys(): AsyncIterableIterator<str
 
 class OpfsStore implements Store {
   readonly persistent = true;
+  writeProblem: string | null = null;
+  /** True once the worker itself has failed, as opposed to one request. */
+  broken = false;
   private readonly pending = new Map<
     number,
     { resolve(): void; reject(e: Error): void; progress?: (f: number) => void }
@@ -86,8 +92,11 @@ class OpfsStore implements Store {
     };
     worker.onerror = (event) => {
       const error = new Error(event.message || 'Storage worker failed');
+      this.broken = true;
       for (const waiter of this.pending.values()) waiter.reject(error);
       this.pending.clear();
+      for (const done of this.idleWaiters) done();
+      this.idleWaiters = [];
     };
   }
 
@@ -165,7 +174,15 @@ export async function openStore(): Promise<Store> {
     await navigator.storage.getDirectory();
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     const store = new OpfsStore(worker);
-    await store.request({ type: 'probe' });
+    try {
+      await store.request({ type: 'probe' });
+    } catch (err) {
+      // Without a working worker nothing can be written at all: use memory and say so.
+      if (store.broken) return new MemoryStore();
+      // The files are there but a test write failed, most likely because storage is full.
+      // Keep using the real store, so projects can still be opened, backed up and deleted.
+      store.writeProblem = err instanceof Error ? err.message : 'Writing failed';
+    }
     return store;
   } catch {
     return new MemoryStore();

@@ -230,8 +230,7 @@ export function installTimeline(ed: Editor): Timeline {
     if (Math.abs(scroller.scrollLeft - expected) <= 1.5) return;
     expected = scroller.scrollLeft;
     const t = Math.round((scroller.scrollLeft / pps) * ed.project.fps) / ed.project.fps;
-    ed.player.seek(t);
-    showTime();
+    ed.seek(t);
   });
 
   function showTime(): void {
@@ -350,21 +349,23 @@ export function installTimeline(ed: Editor): Timeline {
       if (ev.pointerId !== e.pointerId) return;
       const dt = (contentX(ev.clientX) - x0) / pps;
       ed.revert();
+      if (!findClip(ed.project, id)) return;
       if (side === 'left') trimStart(ed.project, id, snapTo(base.start + dt, targets).time);
       else trimEnd(ed.project, id, snapTo(base.end + dt, targets).time);
       ed.live();
     };
     const up = (ev: PointerEvent): void => {
       if (ev.pointerId !== e.pointerId) return;
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
       gesture = false;
       ed.commit();
     };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
+    // On the window, so the gesture still ends if the clip disappears mid-drag.
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
   }
 
   function startPress(e: PointerEvent, node: HTMLDivElement): void {

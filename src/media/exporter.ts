@@ -230,10 +230,7 @@ export async function exportProject(
   };
 
   const resolve = (clip: Clip): Drawable | null => {
-    if (clip.kind === 'image') {
-      const image = media.get(clip.mediaId)?.image;
-      return image ? { source: image, width: image.width, height: image.height } : null;
-    }
+    if (clip.kind === 'image') return current.get(clip.id) ?? null;
     return current.get(clip.id) ?? null;
   };
 
@@ -252,6 +249,10 @@ export async function exportProject(
       current.clear();
       const visible = visibleAt(p, t);
       for (const clip of visible) {
+        if (clip.kind === 'image' && clip.mediaId) {
+          const picture = await media.loadPicture(clip.mediaId);
+          current.set(clip.id, picture ? { source: picture, width: picture.width, height: picture.height } : null);
+        }
         if (clip.kind !== 'video') continue;
         const provider = await providerFor(clip);
         if (!provider) continue;

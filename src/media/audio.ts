@@ -3,7 +3,7 @@
 // picture, so sound and picture cannot drift apart.
 
 import type { Clip, Project } from '../doc/model';
-import { audibleBetween, clipEnd, gainAt, projectDuration } from '../doc/ops';
+import { audibleBetween, clipEnd, fades, gainAt, projectDuration } from '../doc/ops';
 import type { MediaLibrary } from './library';
 
 const LEAD = 0.12;
@@ -18,13 +18,14 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  */
 export function scheduleGain(g: AudioParam, clip: Clip, from: number, at: (timeline: number) => number): void {
   const begin = Math.max(from, clip.start);
+  const { fadeIn, fadeOut } = fades(clip);
   g.setValueAtTime(gainAt(clip, begin), at(begin));
-  if (clip.fadeIn > 0 && begin < clip.start + clip.fadeIn) {
-    const top = Math.min(clip.start + clip.fadeIn, clipEnd(clip));
+  if (fadeIn > 0 && begin < clip.start + fadeIn) {
+    const top = clip.start + fadeIn;
     g.linearRampToValueAtTime(gainAt(clip, top), at(top));
   }
-  if (clip.fadeOut > 0) {
-    const fadeStart = Math.max(begin, clipEnd(clip) - clip.fadeOut);
+  if (fadeOut > 0) {
+    const fadeStart = Math.max(begin, clipEnd(clip) - fadeOut);
     g.setValueAtTime(gainAt(clip, fadeStart), at(fadeStart));
     g.linearRampToValueAtTime(0, at(clipEnd(clip)));
   }
@@ -49,6 +50,15 @@ export class AudioPreview {
         const Ctor: AudioContextClass | undefined =
           window.AudioContext ?? (window as unknown as { webkitAudioContext?: AudioContextClass }).webkitAudioContext;
         if (!Ctor) return;
+        // Ask to be treated as media playback, so the device's silent switch does not mute the preview.
+        const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+        if (session) {
+          try {
+            session.type = 'playback';
+          } catch {
+            // Not settable here.
+          }
+        }
         this.ctx = new Ctor({ latencyHint: 'interactive' });
       }
       if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
@@ -60,6 +70,16 @@ export class AudioPreview {
   /** True when the audio clock is usable as the master clock. */
   get running(): boolean {
     return !!this.ctx && this.ctx.state === 'running';
+  }
+
+  /** True while the short lead-in before the first sound has not passed yet. */
+  get leading(): boolean {
+    return !!this.ctx && this.ctx.currentTime < this.ctxStart;
+  }
+
+  /** True when there is a context that may still start running. */
+  get pending(): boolean {
+    return !!this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed';
   }
 
   /** Timeline time according to the audio clock. */

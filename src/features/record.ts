@@ -11,10 +11,12 @@ export function installRecord(ed: Editor): { open(): void } {
   const time = el<HTMLOutputElement>('record-time');
   let recorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;
-  let chunks: Blob[] = [];
   let timer = 0;
   let started = 0;
   let keep = false;
+  /** Changes whenever the dialog is opened, closed or restarted, so late answers can tell they are stale. */
+  let session = 0;
+  let starting = false;
 
   function reset(): void {
     window.clearInterval(timer);
@@ -27,26 +29,41 @@ export function installRecord(ed: Editor): { open(): void } {
   }
 
   async function start(): Promise<void> {
+    if (starting || recorder) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       toast('This browser cannot record sound');
       return;
     }
+    const mine = ++session;
+    starting = true;
+    let opened: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      opened = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      starting = false;
       toast('The microphone is not available. Check the permission for this site.');
       return;
     }
-    chunks = [];
+    starting = false;
+    if (mine !== session) {
+      // Cancelled while the permission question was open.
+      opened.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    stream = opened;
+    const mineChunks: Blob[] = [];
     keep = false;
     recorder = new MediaRecorder(stream);
     const used = recorder;
     recorder.addEventListener('dataavailable', (e) => {
-      if (e.data.size) chunks.push(e.data);
+      if (e.data.size) mineChunks.push(e.data);
     });
     recorder.addEventListener('stop', () => {
-      const type = used.mimeType || chunks[0]?.type || 'audio/webm';
-      const blob = new Blob(chunks, { type: type.split(';')[0] });
+      opened.getTracks().forEach((t) => t.stop());
+      // A recorder from an earlier opening of the dialog has nothing to say any more.
+      if (mine !== session) return;
+      const type = used.mimeType || mineChunks[0]?.type || 'audio/webm';
+      const blob = new Blob(mineChunks, { type: type.split(';')[0] });
       const wanted = keep;
       reset();
       dialog.hidden = true;
@@ -90,6 +107,7 @@ export function installRecord(ed: Editor): { open(): void } {
     keep = false;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     else {
+      session++;
       reset();
       dialog.hidden = true;
     }
@@ -98,6 +116,8 @@ export function installRecord(ed: Editor): { open(): void } {
   return {
     open() {
       ed.player.pause();
+      session++;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
       reset();
       dialog.hidden = false;
     },

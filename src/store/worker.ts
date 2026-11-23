@@ -38,6 +38,16 @@ function split(path: string): string[] {
   return parts;
 }
 
+/** Writes every byte or throws: a short write must never pass for success. */
+function writeAll(access: SyncHandle, data: Uint8Array, position: number): void {
+  let done = 0;
+  while (done < data.length) {
+    const wrote = access.write(data.subarray(done), { at: position + done });
+    if (!(wrote > 0)) throw new Error('Storage is full');
+    done += wrote;
+  }
+}
+
 async function write(seq: number, path: string, data: Blob | Uint8Array): Promise<void> {
   const parts = split(path);
   const name = parts.pop()!;
@@ -47,7 +57,7 @@ async function write(seq: number, path: string, data: Blob | Uint8Array): Promis
   try {
     access.truncate(0);
     if (data instanceof Uint8Array) {
-      access.write(data, { at: 0 });
+      writeAll(access, data, 0);
     } else {
       // Large files are copied piece by piece so they never sit in memory whole.
       const reader = data.stream().getReader();
@@ -56,7 +66,8 @@ async function write(seq: number, path: string, data: Blob | Uint8Array): Promis
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        at += access.write(value, { at });
+        writeAll(access, value, at);
+        at += value.length;
         if (at - lastReport > 4 << 20) {
           lastReport = at;
           self.postMessage({ seq, progress: data.size ? at / data.size : 0 } satisfies WorkerReply);
@@ -85,12 +96,7 @@ async function streamOpen(path: string): Promise<void> {
 
 function streamWrite(position: number, data: Uint8Array): void {
   if (!stream) throw new Error('No file is open');
-  let done = 0;
-  while (done < data.length) {
-    const wrote = stream.write(data.subarray(done), { at: position + done });
-    if (wrote <= 0) throw new Error('Storage is full');
-    done += wrote;
-  }
+  writeAll(stream, data, position);
 }
 
 function streamClose(): void {

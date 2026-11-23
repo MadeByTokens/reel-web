@@ -1,7 +1,7 @@
 // The projects screen: what the app opens on.
 
 import { ASPECTS } from '../doc/model';
-import { el } from '../editor';
+import { claim, el } from '../editor';
 import type { Store } from '../store/store';
 import { ask } from '../ui/dialog';
 import { busy, errorText, safeName, saveFile, toast } from '../ui/feedback';
@@ -97,8 +97,11 @@ export function installHome(store: Store, openProject: (id: string) => Promise<v
       grid.append(tile);
     }
 
-    warning.hidden = store.persistent;
-    if (!store.persistent) {
+    warning.hidden = store.persistent && !store.writeProblem;
+    if (store.writeProblem) {
+      warning.textContent =
+        'Reel could not write to its storage on this device, which usually means the storage is full. Your projects are still here: save project files for the ones you want to keep, then delete some to make room.';
+    } else if (!store.persistent) {
       warning.textContent =
         'This browser is not letting Reel save files here (private browsing, or a page not served over HTTPS). Projects will be lost when the page closes.';
     }
@@ -166,7 +169,11 @@ export function installHome(store: Store, openProject: (id: string) => Promise<v
     if (!project) return;
     void ask({ title: 'Rename project', value: project.name, ok: 'Rename' }).then(async (name) => {
       if (!name) return;
-      await renameProject(store, project.id, name.slice(0, 60));
+      try {
+        await renameProject(store, project.id, name.slice(0, 60));
+      } catch (err) {
+        toast(errorText(err, 'The project could not be renamed'));
+      }
       await refresh();
     });
   });
@@ -190,7 +197,18 @@ export function installHome(store: Store, openProject: (id: string) => Promise<v
     if (!project) return;
     void ask({ title: `Delete "${project.name}"? This cannot be undone.`, ok: 'Delete', danger: true }).then(async (answer) => {
       if (answer === null) return;
-      await deleteProject(store, project.id);
+      const release = await claim(`reel-project-${project.id}`);
+      if (!release) {
+        toast('This project is open in another tab or window');
+        return;
+      }
+      try {
+        await deleteProject(store, project.id);
+      } catch (err) {
+        toast(errorText(err, 'The project could not be deleted'));
+      } finally {
+        release();
+      }
       await refresh();
     });
   });

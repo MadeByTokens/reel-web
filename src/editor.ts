@@ -16,6 +16,27 @@ export function el<T extends HTMLElement>(id: string): T {
 const HISTORY = 100;
 const SAVE_DELAY = 400;
 
+/**
+ * Claims a name for this tab through the browser's lock manager. Resolves with
+ * a function that lets go, or null when another tab holds it. Where there is
+ * no lock manager the claim always succeeds.
+ */
+export function claim(name: string): Promise<(() => void) | null> {
+  const locks = navigator.locks;
+  if (!locks) return Promise.resolve(() => {});
+  return new Promise((resolve) => {
+    void locks
+      .request(name, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          resolve(null);
+          return undefined;
+        }
+        return new Promise<void>((release) => resolve(release));
+      })
+      .catch(() => resolve(() => {}));
+  });
+}
+
 export const projectFolder = (id: string): string => `projects/${id}`;
 
 export type Listener = () => void;
@@ -36,6 +57,8 @@ export class Editor {
   private saveTimer = 0;
   private saveChain: Promise<void> = Promise.resolve();
   private saveFailed = false;
+  /** Lets go of the claim on the open project (see open()). */
+  private releaseLock: (() => void) | null = null;
   private readonly changeListeners = new Set<Listener>();
   private readonly timeListeners = new Set<Listener>();
   private readonly selectListeners = new Set<Listener>();
@@ -81,6 +104,20 @@ export class Editor {
 
   /** Opens a saved project. Throws if it cannot be read; nothing is written in that case. */
   async open(id: string): Promise<void> {
+    // Two tabs editing one project would overwrite each other's saves and delete each
+    // other's media, so a project is claimed while it is open.
+    const release = await claim(`reel-project-${id}`);
+    if (!release) throw new Error('This project is open in another tab or window');
+    try {
+      await this.load(id);
+    } catch (err) {
+      release();
+      throw err;
+    }
+    this.releaseLock = release;
+  }
+
+  private async load(id: string): Promise<void> {
     const loaded = await loadDocument(this.store, `${projectFolder(id)}/project`);
     const project = loaded.text ? parseProject(loaded.text) : null;
     if (!project) throw new Error('This project cannot be read');
@@ -98,6 +135,7 @@ export class Editor {
       project.media = project.media.filter((m) => m.id !== info.id);
       await this.media.remove(info);
     }
+    await this.media.sweep(project.media);
     this.player = new Player(this.canvas, () => this.project, this.media);
     this.player.onTime = () => this.emit(this.timeListeners);
     this.player.onPlayState = () => this.emit(this.timeListeners);
@@ -120,9 +158,16 @@ export class Editor {
       // The picture on the projects screen is a nicety.
     }
     await this.settled();
+    // From here on nothing may be written: the project may be deleted from the projects screen.
     this.isOpen = false;
+    window.clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    await this.saveChain;
+    this.pendingBase = null;
     this.player.dispose();
     this.media.dispose();
+    this.releaseLock?.();
+    this.releaseLock = null;
   }
 
   // --- editing -----------------------------------------------------------------------
@@ -178,6 +223,9 @@ export class Editor {
     this.player.invalidate();
     this.emit(this.changeListeners);
     this.emit(this.timeListeners);
+    // A volume change should be heard at once when it is made while playing.
+    const selected = this.selected;
+    if (selected && this.player.playing) this.player.audio.setVolume(selected);
     if (save) this.scheduleSave();
   }
 
@@ -224,6 +272,7 @@ export class Editor {
   private saveNow(): void {
     window.clearTimeout(this.saveTimer);
     this.saveTimer = 0;
+    if (!this.isOpen) return;
     const text = JSON.stringify(this.project);
     const base = `${projectFolder(this.projectId)}/project`;
     this.saveChain = this.saveChain.then(async () => {
@@ -241,7 +290,17 @@ export class Editor {
   async settled(): Promise<void> {
     if (this.saveTimer) this.saveNow();
     await this.saveChain;
+    if (this.saveFailed) {
+      // One more try: the failure may have been a moment of full storage.
+      this.saveNow();
+      await this.saveChain;
+    }
     await this.store.idle();
+  }
+
+  /** True when the last attempt to save did not succeed: what is on screen is newer than what is stored. */
+  get unsaved(): boolean {
+    return this.saveFailed;
   }
 
   private emit(listeners: Set<Listener>): void {

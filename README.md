@@ -64,6 +64,9 @@ blend modes, colour filters, stickers and handwriting, reverse, 4K.
 - Speed changes the pitch of sound.
 - Layers stay at their own times when main-track clips before them are trimmed or removed.
 - A project file is limited to 4 GB.
+- A project can be open in one tab at a time; a second tab is told so.
+- Timeline thumbnails and paused frames come from the browser's own video player, so a file
+  it cannot seek in shows plain blocks.
 - Export pauses if the app goes to the background, and needs the screen to stay on (the app
   asks the browser to keep it awake).
 - Browsers may clear a site's files after some weeks without use unless the app has been
@@ -94,6 +97,7 @@ Storage and offline use need HTTPS or localhost, so test on a tablet with the de
 | `src/ui/` | Timeline, tool panel, preview handles, dialogs |
 | `src/features/` | Projects screen, export dialog, recording |
 | `tests/e2e/` | Browser tests; `tests/fixtures/` are generated test clips |
+| `scripts/` | `real-session.mjs` (a manual run with real footage), `check-live.mjs` (checks the published site), `make-brand.py` |
 
 The app icons, favicon and banner are cut from one picture, `docs/brand/sheet.jpeg`, by
 `python scripts/make-brand.py` (needs Pillow, NumPy and SciPy). The sheet was made with an

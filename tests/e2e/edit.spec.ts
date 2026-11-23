@@ -87,6 +87,31 @@ test.describe('main track', () => {
     await expect(page.getByRole('button', { name: 'Split at Playhead' })).toBeEnabled();
   });
 
+  test('scrolling the timeline keeps the split buttons and the playhead in step', async ({ page }) => {
+    await openApp(page);
+    await newProject(page);
+    await addMedia(page, 'red.png', 'green.png');
+    const p = await project(page);
+    const zoom = (await status(page)).zoom;
+    await select(page, p.primary[0]!.id);
+    await page.getByRole('button', { name: 'Trim / Split' }).click();
+    const split = page.getByRole('button', { name: 'Split at Playhead' });
+    await expect(split).toBeDisabled();
+    const scrollTo = (seconds: number): Promise<void> =>
+      page.locator('#tl-scroll').evaluate((node, left) => void (node.scrollLeft = left), zoom * seconds);
+    await scrollTo(2);
+    await expect(split).toBeEnabled();
+    await scrollTo(6);
+    await expect(split).toBeDisabled();
+    // Even a stale button must not act outside the clip.
+    await split.evaluate((node) => ((node as HTMLButtonElement).disabled = false));
+    await page.getByRole('button', { name: 'Trim to Left of Playhead' }).evaluate((node) => {
+      (node as HTMLButtonElement).disabled = false;
+      (node as HTMLButtonElement).click();
+    });
+    expect((await project(page)).primary[0]!.duration).toBe(4.5);
+  });
+
   test('dragging an end grip trims the clip', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', NO_VIDEO);
     await openApp(page);
@@ -320,6 +345,30 @@ test.describe('keeping work', () => {
     expect(p.primary).toHaveLength(1);
     expect(p.audio).toHaveLength(1);
     await waitForPixel(page, 0.5, 0.5, [255, 48, 48]);
+  });
+
+  test('a project open in one tab cannot be opened or deleted from another', async ({ page, context }) => {
+    await openApp(page);
+    test.skip(!(await status(page)).persistent, 'needs storage shared between tabs');
+    await newProject(page, 'Shared');
+    await addMedia(page, 'red.png');
+    await settle(page);
+    const other = await context.newPage();
+    await openApp(other);
+    await other.locator('.tile', { hasText: 'Shared' }).click();
+    await expect(other.locator('#toast')).toContainText('open in another tab');
+    await expect(other.locator('#editor')).toBeHidden();
+    await other.getByRole('button', { name: 'Options for Shared', exact: true }).click();
+    await other.locator('#tile-delete').click();
+    await other.locator('#ask-ok').click();
+    await expect(other.locator('#toast')).toContainText('open in another tab');
+    await expect(other.locator('.tile', { hasText: 'Shared' })).toHaveCount(1);
+    // Once the first tab lets go, the second may open it.
+    await page.locator('#back').click();
+    await page.locator('#home-create').waitFor();
+    await other.locator('.tile', { hasText: 'Shared' }).click();
+    await other.locator('#editor').waitFor();
+    expect((await project(other)).primary).toHaveLength(1);
   });
 
   test('a file that is not a project is refused', async ({ page }) => {

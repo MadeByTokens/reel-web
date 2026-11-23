@@ -277,6 +277,8 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
   }
 
   function render(): void {
+    // A slider being dragged is about to be replaced and would never report its release.
+    ed.commit();
     content.replaceChildren();
     sync = () => {};
     const clip = ed.isOpen ? ed.selected : null;
@@ -311,7 +313,13 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
           const id = ed.selectedId;
           if (!id) return;
           const t = ed.time;
-          const before = findClip(ed.project, id)?.clip.start ?? 0;
+          const now = findClip(ed.project, id)?.clip;
+          // The playhead may have moved since the buttons were last refreshed.
+          if (!now || t <= now.start || t >= clipEnd(now)) {
+            sync();
+            return;
+          }
+          const before = now.start;
           ed.edit((p) => action(p, id, t));
           // After cutting off the left part of a main-track clip, everything moved left with it.
           if (index === 0 && found.track === 'primary') ed.seek(before);

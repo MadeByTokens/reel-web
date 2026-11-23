@@ -57,6 +57,12 @@ export function maxDuration(p: Project, clip: Clip): number {
   return Math.max(MIN_DURATION, (media.duration - clip.offset) / clip.speed);
 }
 
+/** The same limit in whole frames, so a clip stretched to its end still ends on a frame. */
+function maxFrames(p: Project, clip: Clip): number {
+  const max = maxDuration(p, clip);
+  return Number.isFinite(max) ? Math.max(MIN_DURATION, Math.floor(max * p.fps + 1e-6) / p.fps) : max;
+}
+
 const overlaps = (a: Clip, start: number, duration: number): boolean =>
   a.start < start + duration - 1e-6 && start < clipEnd(a) - 1e-6;
 
@@ -78,7 +84,9 @@ export function compactRows(list: Clip[]): void {
 export function primaryAt(p: Project, t: number): Found | null {
   for (let i = 0; i < p.primary.length; i++) {
     const clip = p.primary[i]!;
-    if (t < clipEnd(clip) - 1e-6 || i === p.primary.length - 1) {
+    // A clip owns everything up to where the next one starts, so rounding never leaves a hole.
+    const next = p.primary[i + 1];
+    if (!next || t < next.start - 1e-6) {
       if (t >= clip.start - 1e-6) return { clip, track: 'primary', index: i };
     }
   }
@@ -183,7 +191,7 @@ export function trimEnd(p: Project, id: string, to: number): void {
   if (!found) return;
   const { clip, track } = found;
   let duration = snap(p, to) - clip.start;
-  duration = Math.max(MIN_DURATION, Math.min(duration, maxDuration(p, clip)));
+  duration = Math.max(MIN_DURATION, Math.min(duration, maxFrames(p, clip)));
   clip.duration = duration;
   if (track === 'primary') layoutPrimary(p);
 }
@@ -217,8 +225,9 @@ export function setSpeed(p: Project, id: string, speed: number): void {
   const next = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed));
   const sourceLength = clip.duration * clip.speed;
   clip.speed = next;
-  clip.duration = Math.max(MIN_DURATION, snap(p, sourceLength / next));
-  clip.duration = Math.min(clip.duration, maxDuration(p, clip));
+  // Rounded down, so changing speed back and forth can never reach past the piece first chosen.
+  clip.duration = Math.max(MIN_DURATION, Math.floor((sourceLength / next) * p.fps + 1e-6) / p.fps);
+  clip.duration = Math.min(clip.duration, maxFrames(p, clip));
   if (track === 'primary') layoutPrimary(p);
   else clip.row = freeRow(p[track], clip.start, clip.duration, clip.id, clip.row);
 }
@@ -267,11 +276,19 @@ export function audibleBetween(p: Project, from: number, to: number): Clip[] {
 /** The loudness of a clip at a timeline time, with its fades applied. */
 export function gainAt(clip: Clip, t: number): number {
   const local = t - clip.start;
+  const { fadeIn, fadeOut } = fades(clip);
   let g = clip.volume;
-  if (clip.fadeIn > 0 && local < clip.fadeIn) g *= Math.max(0, local / clip.fadeIn);
+  if (fadeIn > 0 && local < fadeIn) g *= Math.max(0, local / fadeIn);
   const left = clip.duration - local;
-  if (clip.fadeOut > 0 && left < clip.fadeOut) g *= Math.max(0, left / clip.fadeOut);
+  if (fadeOut > 0 && left < fadeOut) g *= Math.max(0, left / fadeOut);
   return g;
+}
+
+/** The fades as they are applied: shortened together when the clip is too short to hold both. */
+export function fades(clip: Clip): { fadeIn: number; fadeOut: number } {
+  const total = clip.fadeIn + clip.fadeOut;
+  const k = total > clip.duration && total > 0 ? clip.duration / total : 1;
+  return { fadeIn: clip.fadeIn * k, fadeOut: clip.fadeOut * k };
 }
 
 /** Media files no clip uses any more. */

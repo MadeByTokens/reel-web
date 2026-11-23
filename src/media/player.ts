@@ -42,6 +42,9 @@ export class Player {
   private timeStart = 0;
   private lastFrame = 0;
   private stopped = false;
+  /** While true, play has been asked for but the clock has not started: pictures wait for the sound. */
+  private holding = false;
+  private holdUntil = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -50,6 +53,7 @@ export class Player {
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.audio = new AudioPreview(media);
+    media.onPicture = () => this.invalidate();
     this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -75,6 +79,8 @@ export class Player {
     this.audio.start(p, this.time);
     this.wallStart = performance.now();
     this.timeStart = this.time;
+    this.holding = false;
+    this.holdUntil = this.wallStart + 600;
     this.onPlayState(true);
   }
 
@@ -100,7 +106,8 @@ export class Player {
     const item = this.media.get(clip.mediaId);
     if (!item) return null;
     if (clip.kind === 'image') {
-      return item.image ? { source: item.image, width: item.image.width, height: item.image.height } : null;
+      const picture = this.media.picture(clip.mediaId);
+      return picture ? { source: picture, width: picture.width, height: picture.height } : null;
     }
     const video = this.videos.get(clip.id)?.el;
     if (!video || video.readyState < 2 || !video.videoWidth) return null;
@@ -157,7 +164,7 @@ export class Player {
         busy = true;
         continue;
       }
-      if (this.playing && active) {
+      if (this.playing && !this.holding && active) {
         if (el.playbackRate !== clip.speed) el.playbackRate = clip.speed;
         if (el.paused) {
           if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target;
@@ -193,9 +200,16 @@ export class Player {
       const end = projectDuration(p);
       if (this.audio.running) {
         this.time = this.audio.now();
+        this.holding = this.audio.leading;
         // Keep the wall clock in step, so it can take over if the audio clock stops.
         this.wallStart = now - (this.time - this.timeStart) * 1000;
+      } else if (this.audio.pending && now < this.holdUntil) {
+        // The sound is about to start: wait for it rather than run ahead and jump back.
+        this.holding = true;
+        this.time = this.timeStart;
+        this.wallStart = now;
       } else {
+        this.holding = false;
         this.time = this.timeStart + (now - this.wallStart) / 1000;
       }
       if (this.time >= end) {

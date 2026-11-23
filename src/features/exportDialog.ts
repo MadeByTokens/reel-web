@@ -75,10 +75,16 @@ export function installExport(ed: Editor): { open(): void } {
     const name = safeName(nameInput.value, 'video');
     const abort = new AbortController();
     let lock: WakeLockLike | null = null;
+    // Keep the screen awake: a sleeping tablet stops the export. The browser drops the
+    // lock whenever the page is hidden, so it is asked for again each time it returns.
+    const wake = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockLike> } }).wakeLock;
+    const hold = async (): Promise<void> => {
+      if (document.hidden) return;
+      lock = (await wake?.request('screen').catch(() => null)) ?? lock;
+    };
+    document.addEventListener('visibilitychange', hold);
     try {
-      // Keep the screen awake: a sleeping tablet stops the export.
-      const wake = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockLike> } }).wakeLock;
-      lock = (await wake?.request('screen').catch(() => null)) ?? null;
+      await hold();
       await ed.settled();
       const started = performance.now();
       const result = await busy(
@@ -92,7 +98,8 @@ export function installExport(ed: Editor): { open(): void } {
       if (err instanceof DOMException && err.name === 'AbortError') toast('Export cancelled');
       else toast(errorText(err, 'The video could not be made'));
     } finally {
-      await lock?.release().catch(() => {});
+      document.removeEventListener('visibilitychange', hold);
+      await (lock as WakeLockLike | null)?.release().catch(() => {});
     }
   }
 

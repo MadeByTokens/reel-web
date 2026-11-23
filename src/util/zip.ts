@@ -117,6 +117,8 @@ export async function unzip(file: Blob, onProgress?: (fraction: number) => void)
   const decoder = new TextDecoder();
   const entries: ZipEntry[] = [];
   let at = 0;
+  let claimed = 0;
+  if (count > 5000) throw new Error('Unsupported project file');
   for (let i = 0; i < count; i++) {
     if (at + 46 > dir.length || view.getUint32(at, true) !== CENTRAL) throw new Error('Damaged project file');
     if (view.getUint16(at + 10, true) !== 0) throw new Error('Unsupported project file');
@@ -132,6 +134,9 @@ export async function unzip(file: Blob, onProgress?: (fraction: number) => void)
     if (head.getUint32(0, true) !== LOCAL) throw new Error('Damaged project file');
     const start = local + 30 + head.getUint16(26, true) + head.getUint16(28, true);
     if (start + size > file.size) throw new Error('Damaged project file');
+    // Entries that share bytes would let a small file ask for unbounded work.
+    claimed += size;
+    if (claimed > file.size) throw new Error('Damaged project file');
     const blob = file.slice(start, start + size);
     if ((await crc32Blob(blob)) !== crc) throw new Error('Damaged project file');
     entries.push({ name, blob });

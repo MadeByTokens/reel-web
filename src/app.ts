@@ -1,7 +1,7 @@
 // Start-up and the wiring between the screens.
 
 import { splitClip, deleteClip } from './doc/ops';
-import { Editor, el } from './editor';
+import { Editor, claim, el } from './editor';
 import { installExport } from './features/exportDialog';
 import { installHome, saveProjectFile } from './features/home';
 import { installRecord } from './features/record';
@@ -24,8 +24,11 @@ export async function startApp(): Promise<void> {
   const store = await openStore();
   // Ask the browser not to clear this site's files when space runs low.
   void navigator.storage?.persist?.().catch(() => false);
-  // An export that was interrupted leaves its unfinished file behind.
-  void store.remove('exports');
+  // An export that was interrupted leaves its unfinished file behind. Only the first tab
+  // clears it: a second one must not delete a file the first is still writing or offering.
+  void claim('reel-exports').then((first) => {
+    if (first) void store.remove('exports');
+  });
 
   const ed = new Editor(store, el<HTMLCanvasElement>('preview'));
   ed.toast = toast;
@@ -94,7 +97,9 @@ export async function startApp(): Promise<void> {
     switching = true;
     try {
       closePopover();
+      const unsaved = ed.unsaved;
       await ed.close();
+      if (unsaved && ed.unsaved) toast('The last changes could not be saved. Storage may be full.');
       editorNode.hidden = true;
       await home.show();
     } finally {

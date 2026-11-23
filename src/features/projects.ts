@@ -29,9 +29,10 @@ export async function listProjects(store: Store): Promise<Summary[]> {
     const loaded = await loadDocument(store, `${projectFolder(id)}/project`);
     const project = loaded.text ? parseProject(loaded.text) : null;
     if (!project) {
-      // A folder with media but no project yet is an import that never finished.
-      if (!loaded.damaged) continue;
-      out.push({ id, name: 'Damaged project', duration: 0, modified: 0, width: 16, height: 9, damaged: true, thumb: null });
+      // Saved but unreadable (damaged, or made by a newer version), or a copy or import
+      // that never finished. Either way it is shown, so it can be seen and deleted.
+      const name = loaded.damaged || loaded.text ? 'Unreadable project' : 'Unfinished project';
+      out.push({ id, name, duration: 0, modified: 0, width: 16, height: 9, damaged: true, thumb: null });
       continue;
     }
     out.push({
