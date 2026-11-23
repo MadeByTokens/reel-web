@@ -52,7 +52,26 @@ export function makeVideoElement(url: string): HTMLVideoElement {
   video.playsInline = true;
   video.preload = 'auto';
   video.src = url;
+  // Kept in the page, unseen: some browsers only decode videos that are part of it.
+  let pool = document.getElementById('video-pool');
+  if (!pool) {
+    pool = document.createElement('div');
+    pool.id = 'video-pool';
+    pool.setAttribute('aria-hidden', 'true');
+    pool.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none;z-index:-1';
+    document.body.append(pool);
+  }
+  video.style.cssText = 'width:2px;height:2px';
+  pool.append(video);
   return video;
+}
+
+/** Stops a video made by makeVideoElement and lets go of its file. */
+export function releaseVideo(video: HTMLVideoElement): void {
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  video.remove();
 }
 
 /**
@@ -133,8 +152,7 @@ async function probe(blob: Blob, name: string): Promise<Probe> {
       hasAudio: isVideo ? (tracks ? tracks.audio : true) : true,
     };
   } finally {
-    video.removeAttribute('src');
-    video.load();
+    releaseVideo(video);
     URL.revokeObjectURL(url);
   }
 }
@@ -227,6 +245,8 @@ export class MediaLibrary {
     this.inputs.delete(info.id);
     this.audio.delete(info.id);
     this.thumbs.delete(info.id);
+    const thumbVideo = this.thumbVideos.get(info.id);
+    if (thumbVideo) releaseVideo(thumbVideo);
     this.thumbVideos.delete(info.id);
     await this.store.remove(this.path(info));
   }
@@ -382,10 +402,7 @@ export class MediaLibrary {
       if (item.image && 'close' in item.image) item.image.close();
     }
     for (const input of this.inputs.values()) input.dispose();
-    for (const video of this.thumbVideos.values()) {
-      video.removeAttribute('src');
-      video.load();
-    }
+    for (const video of this.thumbVideos.values()) releaseVideo(video);
     this.items.clear();
     this.inputs.clear();
     this.audio.clear();

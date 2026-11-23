@@ -5,7 +5,7 @@ import type { Clip, Project } from '../doc/model';
 import { clipEnd, projectDuration } from '../doc/ops';
 import { compose, type Drawable } from '../render/compose';
 import { AudioPreview } from './audio';
-import { makeVideoElement, type MediaLibrary } from './library';
+import { makeVideoElement, releaseVideo, type MediaLibrary } from './library';
 
 /** Clips this close to the playhead get a player ready before they are needed. */
 const WARM_BEFORE = 1.5;
@@ -178,9 +178,7 @@ export class Player {
     }
     for (const [id, entry] of this.videos) {
       if (wanted.has(id)) continue;
-      entry.el.pause();
-      entry.el.removeAttribute('src');
-      entry.el.load();
+      releaseVideo(entry.el);
       this.videos.delete(id);
     }
     this.stats.videos = this.videos.size;
@@ -231,11 +229,7 @@ export class Player {
     this.stopped = true;
     cancelAnimationFrame(this.raf);
     this.audio.stop();
-    for (const { el } of this.videos.values()) {
-      el.pause();
-      el.removeAttribute('src');
-      el.load();
-    }
+    for (const { el } of this.videos.values()) releaseVideo(el);
     this.videos.clear();
   }
 }

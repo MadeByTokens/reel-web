@@ -24,7 +24,7 @@ import { audibleBetween, clipEnd, projectDuration, visibleAt } from '../doc/ops'
 import { compose, type Drawable } from '../render/compose';
 import type { Store } from '../store/store';
 import { scheduleGain } from './audio';
-import { makeVideoElement, primeVideo, type MediaLibrary } from './library';
+import { makeVideoElement, primeVideo, releaseVideo, type MediaLibrary } from './library';
 
 export interface ExportOptions {
   width: number;
@@ -116,8 +116,7 @@ function elementFrames(url: string): FrameProvider {
       return { source: video, width: video.videoWidth, height: video.videoHeight };
     },
     close() {
-      video.removeAttribute('src');
-      video.load();
+      releaseVideo(video);
     },
   };
 }
