@@ -151,6 +151,17 @@ export function installTimeline(ed: Editor): Timeline {
     ctx.clearRect(0, 0, w, h);
     const left = scroller.scrollLeft;
 
+    // Keep each clip's name in view when the clip starts off the left edge.
+    for (const node of nodes.values()) {
+      const hidden = left - node.offsetLeft;
+      const inset = hidden > 0 && hidden < node.offsetWidth - 40 ? hidden + 8 : 8;
+      const labelNode = node.firstElementChild as HTMLElement;
+      if (labelNode.dataset.inset !== String(Math.round(inset))) {
+        labelNode.dataset.inset = String(Math.round(inset));
+        labelNode.style.paddingLeft = `${inset}px`;
+      }
+    }
+
     // Ruler: a tick step that keeps labels comfortably apart.
     const steps = [0.1, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
     const step = steps.find((s) => s * pps >= 70) ?? 600;

@@ -53,3 +53,18 @@ test('exports pictures only', async ({ page }) => {
   expect(file.name).toMatch(/^Stills\.(mp4|webm)$/);
   expect(errors).toEqual([]);
 });
+
+test('an export can be cancelled and started again', async ({ page }) => {
+  await openApp(page);
+  await newProject(page, 'Stop');
+  await addMedia(page, 'red.png', 'green.png', 'red.png', 'green.png');
+  const supported = await page.evaluate(() => typeof VideoEncoder !== 'undefined');
+  test.skip(!supported, 'this browser has no video encoder');
+  await page.locator('#export-button').click();
+  await page.getByRole('button', { name: 'Save as video' }).click();
+  await page.locator('#busy-cancel').click();
+  await expect(page.locator('#toast')).toContainText('Export cancelled');
+  await expect(page.locator('#busy')).toBeHidden();
+  const file = await exportVideo(page);
+  expect(file.name).toMatch(/^Stop\./);
+});
