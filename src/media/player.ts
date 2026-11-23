@@ -229,6 +229,35 @@ export class Player {
     this.onPaint();
   };
 
+  /**
+   * The colour of one clip, without its effects, at a point given as fractions
+   * of the frame. Null where the clip is not drawn.
+   */
+  sample(clip: Clip, x: number, y: number): string | null {
+    const p = this.project();
+    const canvas = document.createElement('canvas');
+    canvas.width = 480;
+    canvas.height = Math.max(2, Math.round((480 * p.height) / p.width));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    const bare: Clip = { ...clip };
+    delete bare.chroma;
+    delete bare.filter;
+    delete bare.adjust;
+    compose(ctx, { ...p, primary: [], layers: [bare], audio: [] }, this.time, canvas.width, canvas.height, this.resolve);
+    const px = Math.max(1, Math.min(canvas.width - 2, Math.round(x * canvas.width)));
+    const py = Math.max(1, Math.min(canvas.height - 2, Math.round(y * canvas.height)));
+    let data: Uint8ClampedArray;
+    try {
+      data = ctx.getImageData(px - 1, py - 1, 3, 3).data;
+    } catch {
+      return null;
+    }
+    const sum = [0, 0, 0];
+    for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c]! += data[i + c]!;
+    return `#${sum.map((v) => Math.round(v / 9).toString(16).padStart(2, '0')).join('')}`;
+  }
+
   /** A small picture of the current frame, for the projects screen. */
   async snapshot(width: number): Promise<Blob | null> {
     const p = this.project();

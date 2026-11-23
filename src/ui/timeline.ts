@@ -2,7 +2,8 @@
 // it; scrolling is the browser's own, so it has the device's momentum.
 
 import type { Clip, Project, TrackName } from '../doc/model';
-import { clipEnd, findClip, mediaOf, moveClip, reorderPrimary, trimEnd, trimStart } from '../doc/ops';
+import { clipEnd, findClip, mediaOf, moveClip, overlapOf, reorderPrimary, trimEnd, trimStart } from '../doc/ops';
+import { PEAKS_PER_SECOND } from '../media/library';
 import { el, type Editor } from '../editor';
 import { icon } from './icons';
 
@@ -51,6 +52,8 @@ export function installTimeline(ed: Editor): Timeline {
   /** A gesture that owns the timeline: scrolling by touch is suppressed while set. */
   let gesture = false;
   const nodes = new Map<string, HTMLDivElement>();
+  /** The transition slots between main-track clips, by the id of the clip each leads into. */
+  const junctions = new Map<string, HTMLButtonElement>();
 
   const pad = (): number => viewW / 2;
   const xOf = (t: number): number => pad() + t * pps;
@@ -59,6 +62,7 @@ export function installTimeline(ed: Editor): Timeline {
 
   function label(p: Project, clip: Clip): string {
     if (clip.kind === 'text') return `${icon('text')}<span>${escapeHtml((clip.text?.text ?? '').split('\n')[0] ?? '')}</span>`;
+    if (clip.kind === 'sticker') return `<span>${escapeHtml(clip.sticker ?? '')} Sticker</span>`;
     const name = escapeHtml(mediaOf(p, clip)?.name ?? '');
     const glyph = clip.kind === 'audio' ? 'audio' : clip.kind === 'image' ? 'image' : 'media';
     const speed = clip.speed !== 1 ? ` ${clip.speed}x` : '';
@@ -80,13 +84,14 @@ export function installTimeline(ed: Editor): Timeline {
     rows.style.height = `${audioTop + audioRows * (ROW_H + ROW_GAP) + 24}px`;
 
     const seen = new Set<string>();
-    const place = (clip: Clip, track: TrackName): void => {
+    const place = (clip: Clip, track: TrackName, index = 0): void => {
       seen.add(clip.id);
       let node = nodes.get(clip.id);
       if (!node) {
         node = document.createElement('div');
         node.dataset.id = clip.id;
-        node.innerHTML = '<div class="label"></div><span class="grip left"></span><span class="grip right"></span>';
+        node.innerHTML =
+          '<div class="label"></div><canvas class="wave" hidden></canvas><div class="keys"></div><span class="grip left"></span><span class="grip right"></span>';
         nodes.set(clip.id, node);
       }
       const parent = track === 'primary' ? head : rows;
@@ -95,7 +100,23 @@ export function installTimeline(ed: Editor): Timeline {
         clip.id === ed.selectedId ? ' selected' : ''
       }${node.classList.contains('lifted') ? ' lifted' : ''}`;
       node.style.left = `${xOf(clip.start)}px`;
-      node.style.width = `${Math.max(2, clip.duration * pps)}px`;
+      // A main-track clip is shown up to where the next one takes over, so their bars never cover each other.
+      const next = track === 'primary' ? p.primary[index + 1] : undefined;
+      const shown = next ? next.start - clip.start : clip.duration;
+      node.style.width = `${Math.max(2, shown * pps)}px`;
+      const keys = node.children[2] as HTMLDivElement;
+      const marks = (clip.keyframes ?? []).filter((k) => k.t >= -1e-6 && k.t <= clip.duration + 1e-6).map((k) => Math.round(k.t * pps));
+      const signature = marks.join(',');
+      if (keys.dataset.marks !== signature) {
+        keys.dataset.marks = signature;
+        keys.replaceChildren(
+          ...marks.map((x) => {
+            const mark = document.createElement('i');
+            mark.style.left = `${x}px`;
+            return mark;
+          }),
+        );
+      }
       if (track !== 'primary') {
         const top = track === 'layers' ? 6 + clip.row * (ROW_H + ROW_GAP) : audioTop + clip.row * (ROW_H + ROW_GAP);
         node.style.top = `${top}px`;
@@ -108,7 +129,28 @@ export function installTimeline(ed: Editor): Timeline {
       }
       node.setAttribute('aria-label', `${clip.kind} clip`);
     };
-    for (const clip of p.primary) place(clip, 'primary');
+    p.primary.forEach((clip, index) => place(clip, 'primary', index));
+    p.primary.forEach((clip, index) => {
+      if (index === 0) return;
+      let slot = junctions.get(clip.id);
+      if (!slot) {
+        slot = document.createElement('button');
+        slot.innerHTML = icon('transition');
+        slot.dataset.clip = clip.id;
+        slot.setAttribute('aria-label', 'Transition');
+        slot.addEventListener('click', () => ed.openView(clip.id, 'transition'));
+        junctions.set(clip.id, slot);
+        head.appendChild(slot);
+      }
+      slot.className = `junction${clip.transition ? ' set' : ''}`;
+      slot.style.left = `${xOf(clip.start + overlapOf(p, index) / 2)}px`;
+    });
+    for (const [id, slot] of junctions) {
+      if (p.primary[0]?.id === id || !p.primary.some((c) => c.id === id)) {
+        slot.remove();
+        junctions.delete(id);
+      }
+    }
     for (const clip of p.layers) place(clip, 'layers');
     for (const clip of p.audio) place(clip, 'audio');
     for (const [id, node] of nodes) {
@@ -159,6 +201,35 @@ export function installTimeline(ed: Editor): Timeline {
       if (labelNode.dataset.inset !== String(Math.round(inset))) {
         labelNode.dataset.inset = String(Math.round(inset));
         labelNode.style.paddingLeft = `${inset}px`;
+      }
+    }
+
+    // The sound of each audio clip, drawn only for the part in view.
+    for (const clip of p.audio) {
+      const wave = nodes.get(clip.id)?.children[1] as HTMLCanvasElement | undefined;
+      if (!wave) continue;
+      const x0 = xOf(clip.start);
+      const from = Math.max(x0, left);
+      const to = Math.min(x0 + clip.duration * pps, left + w);
+      const peaks = clip.mediaId && to > from ? ed.media.waveform(clip.mediaId) : null;
+      wave.hidden = !peaks;
+      if (!peaks) continue;
+      const cw = Math.max(1, Math.round(to - from));
+      if (wave.width !== cw) wave.width = cw;
+      if (wave.height !== ROW_H) wave.height = ROW_H;
+      wave.style.left = `${from - x0}px`;
+      wave.style.width = `${cw}px`;
+      const wctx = wave.getContext('2d')!;
+      wctx.clearRect(0, 0, cw, ROW_H);
+      wctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      const perPixel = (clip.speed * PEAKS_PER_SECOND) / pps;
+      for (let x = 0; x < cw; x++) {
+        const at = (clip.offset + ((from - x0 + x) / pps) * clip.speed) * PEAKS_PER_SECOND;
+        let peak = 0;
+        for (let i = Math.floor(at), end = Math.max(i + 1, Math.ceil(at + perPixel)); i < end; i++) peak = Math.max(peak, peaks[i] ?? 0);
+        // The square root lifts quiet sounds, so speech does not show as a flat line.
+        const bar = Math.max(1, Math.sqrt(peak / 255) * (ROW_H - 4));
+        wctx.fillRect(x, (ROW_H - bar) / 2, 1, bar);
       }
     }
 
@@ -450,6 +521,7 @@ export function installTimeline(ed: Editor): Timeline {
   content.addEventListener('pointerdown', (e) => {
     if (!ed.isOpen || e.button !== 0) return;
     const target = e.target as HTMLElement;
+    if (target.closest('.junction')) return;
     const node = target.closest<HTMLDivElement>('.clip');
     if (node) {
       if (target.classList.contains('grip')) {
@@ -485,6 +557,7 @@ export function installTimeline(ed: Editor): Timeline {
 
   ed.onChange(() => {
     ed.media.onThumb = queueDraw;
+    ed.media.onPeaks = queueDraw;
   });
 
   el('jump-start').addEventListener('click', () => ed.seek(0));

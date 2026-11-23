@@ -15,7 +15,7 @@ Sister project: [flipbook-web](https://github.com/MadeByTokens/flipbook-web) (fr
 Someone who already edits in KineMaster should be able to sit down and work without
 relearning: the preview is at the top, the tools are on the right, the timeline scrolls
 under a fixed playhead, and things are called what they are called there (Media, Layer,
-Audio, REC, Trim / Split, Mixer, Alpha (Opacity), Save as Video). What was learned about
+Audio, REC, Trim / Split, Mixer, Alpha (Opacity), Chroma Key, Save as Video). What was learned about
 its interface, with a source for each fact, is in
 [docs/kinemaster-conventions.md](docs/kinemaster-conventions.md).
 
@@ -26,10 +26,20 @@ It does not mean copying its artwork, icons, name or styling; the look is our ow
 - **Projects**: create (seven aspect ratios), rename, duplicate, delete; everything is saved
   on the device as you edit.
 - **Main track**: add videos and pictures; they play one after another with no gaps.
-- **Layers**: pictures, videos and text over the main track, each on its own row. Move,
-  resize and turn them directly on the preview, with one finger or two.
+- **Layers**: pictures, videos, text and stickers over the main track, each on its own row.
+  Move, resize and turn them directly on the preview, with one finger or two. Layers and
+  sounds stay with the main-track clip they sit over when that clip moves.
+- **Transitions** between main-track clips, set from the small square between them:
+  crossfade, fade through black or white, slide, wipe and zoom. The sound crosses over too.
+- **Keyframes**: a layer glides between the places, sizes, turns and opacities set at
+  different moments. Keyframes show as diamonds on the layer's bar.
+- **Chroma Key** on picture and video layers: pick the colour to remove from the picture,
+  then set the threshold and the softness of the edge.
+- **Color Filter** (nine ready-made looks) and **Adjustment** (brightness, contrast,
+  saturation, warmth) on any picture or video.
+- **Stickers**: about 320 emoji in eight groups, drawn with the device's own emoji font.
 - **Audio**: music and sound files below the layers, a microphone recording (REC), and the
-  sound of every video.
+  sound of every video. Sound clips show their waveform.
 - **Timeline**: scroll to move the playhead, pinch to zoom, tap to select, drag the yellow
   grips to trim, press and hold then drag to move a clip or change the order.
 - **Clip options**: Trim / Split (trim to the left or right of the playhead, split at the
@@ -44,8 +54,8 @@ It does not mean copying its artwork, icons, name or styling; the look is our ow
   moving to another device.
 - **Offline**: after the first visit the app opens with no network.
 
-Not there yet (see [docs/PRD.md](docs/PRD.md)): keyframe animation, transitions, chroma key,
-blend modes, colour filters, stickers and handwriting, reverse, 4K.
+Not there yet (see [docs/PRD.md](docs/PRD.md)): easing curves for keyframes, blend modes,
+handwriting, reverse, 4K.
 
 ## How it works
 
@@ -54,6 +64,7 @@ blend modes, colour filters, stickers and handwriting, reverse, 4K.
 | Project | A small JSON edit list (`src/doc/`): clips with a source file, in-point, length, speed, position and style. Source files are never changed. |
 | Storage | Imported files are copied into the browser's origin private file system, one folder per project. The project itself is written alternately to two slots with a checksum, so a write that is cut short never loses the previous copy. |
 | Preview | One muted `<video>` per nearby clip is kept in step with the playhead and painted, with pictures and text, on a 2D canvas (`src/render/compose.ts`). |
+| Effects | Chroma key, filters and adjustments run in one small WebGL pass per clip (`src/render/fx.ts`) whose result the 2D compositor draws. Without WebGL the clip is drawn plain. |
 | Sound | Decoded a little ahead of the playhead with [Mediabunny](https://mediabunny.dev) and WebCodecs, and scheduled on one Web Audio context whose clock drives the picture. |
 | Export | The same compositor, fed exact frames from the decoder, encodes with WebCodecs; sound is mixed with an offline audio context; Mediabunny writes the file straight to storage. |
 
@@ -62,7 +73,11 @@ blend modes, colour filters, stickers and handwriting, reverse, 4K.
 - The browser must be able to play a file for it to be used. HDR footage is shown however
   the browser converts it.
 - Speed changes the pitch of sound.
-- Layers stay at their own times when main-track clips before them are trimmed or removed.
+- A transition takes at most half of the shorter of its two clips.
+- Keyframes glide in straight lines at a steady pace; there are no easing curves yet. Chroma
+  key, filters and adjustments are the same for the whole clip.
+- Stickers look the way the device draws emoji, so they differ a little between devices.
+- Waveforms are worked out each time a project is opened.
 - A project file is limited to 4 GB.
 - A project can be open in one tab at a time; a second tab is told so.
 - Timeline thumbnails and paused frames come from the browser's own video player, so a file

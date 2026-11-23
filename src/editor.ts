@@ -64,6 +64,10 @@ export class Editor {
   private readonly selectListeners = new Set<Listener>();
 
   toast: (message: string) => void = () => {};
+  /** A panel view to open with the next selection (see openView). */
+  viewRequest: string | null = null;
+  /** When set, the next tap on the preview is handed here, as fractions of the frame, instead of acting on a layer. */
+  pickPoint: ((x: number, y: number) => void) | null = null;
 
   constructor(
     readonly store: Store,
@@ -253,6 +257,13 @@ export class Editor {
 
   select(id: string | null): void {
     if (id === this.selectedId) return;
+    this.selectedId = id;
+    this.emit(this.selectListeners);
+  }
+
+  /** Selects a clip and opens one of its options straight away. */
+  openView(id: string, view: string): void {
+    this.viewRequest = view;
     this.selectedId = id;
     this.emit(this.selectListeners);
   }

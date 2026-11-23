@@ -88,6 +88,7 @@
       <div id="layer-menu" class="popover" role="menu" aria-label="Add a layer" hidden>
         <button id="layer-media" role="menuitem">Media</button>
         <button id="layer-text" role="menuitem">Text</button>
+        <button id="layer-sticker" role="menuitem">Sticker</button>
       </div>
 
       <div id="hud" hidden><pre id="hud-text"></pre></div>
@@ -103,7 +104,7 @@
           <h2>Adding things</h2>
           <ul>
             <li><b>Media</b> adds videos and pictures to the main track, one after another.</li>
-            <li><b>Layer</b> puts a picture, a video or <b>Text</b> on top of the main track, starting at the playhead.</li>
+            <li><b>Layer</b> puts a picture, a video, <b>Text</b> or a <b>Sticker</b> on top of the main track, starting at the playhead.</li>
             <li><b>Audio</b> adds music or sounds below. <b>Voice</b> records with the microphone.</li>
           </ul>
         </section>
@@ -115,6 +116,8 @@
             <li>Tap a clip to select it. Drag the handles at its ends to trim it.</li>
             <li>Press and hold a clip, then drag, to move it or change the order.</li>
             <li><b>Trim/Split</b> cuts the selected clip at the playhead, or removes the part before or after it.</li>
+            <li>Layers and sounds stay with the main-track clip they sit over: when that clip moves, they move too.</li>
+            <li>The small square between two main-track clips sets the <b>Transition</b> from one to the next.</li>
           </ul>
         </section>
         <section>
@@ -122,6 +125,14 @@
           <ul>
             <li>Select a layer, then drag it in the preview to move it. Drag the corner arrow to resize and the round arrow to turn. Two fingers do both at once.</li>
             <li>Tap <b>Play</b> to watch. Tap again to stop.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Effects</h2>
+          <ul>
+            <li><b>Keyframes</b> make a layer move: add one, move the playhead, then move, resize or turn the layer. It glides between the two.</li>
+            <li><b>Chroma Key</b> removes one colour from a layer, such as a green background.</li>
+            <li><b>Color Filter</b> gives a clip a ready-made look; <b>Adjustment</b> changes brightness, contrast, saturation and warmth.</li>
           </ul>
         </section>
         <section>
@@ -204,6 +215,17 @@
         <div class="row end">
           <button id="text-cancel" class="text-button">Cancel</button>
           <button id="text-ok" class="text-button primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stickers" class="dialog" role="dialog" aria-label="Sticker" hidden>
+      <div class="dialog-box wide">
+        <h2>Sticker</h2>
+        <div id="sticker-tabs" class="choices" role="tablist" aria-label="Kinds of sticker"></div>
+        <div id="sticker-grid"></div>
+        <div class="row end">
+          <button id="sticker-cancel" class="text-button">Cancel</button>
         </div>
       </div>
     </div>

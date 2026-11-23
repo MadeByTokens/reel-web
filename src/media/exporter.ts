@@ -132,7 +132,7 @@ async function renderAudio(p: Project, media: MediaLibrary, from: number, to: nu
     }
     const gain = ctx.createGain();
     gain.connect(ctx.destination);
-    scheduleGain(gain.gain, clip, from, (t) => Math.max(0, t - from));
+    scheduleGain(gain.gain, clip, from, (t) => Math.max(0, t - from), p);
     const a0 = Math.max(from, clip.start);
     const a1 = Math.min(to, clipEnd(clip));
     const srcFrom = clip.offset + (a0 - clip.start) * clip.speed;

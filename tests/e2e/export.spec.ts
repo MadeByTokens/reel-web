@@ -23,6 +23,11 @@ test('exports a video with picture and sound', async ({ page, browserName }) => 
   await addText(page, 'Title');
   await addAudio(page, 'tone.wav');
   expect((await status(page)).duration).toBeCloseTo(5, 1);
+  // A crossfade between the two videos: both are decoded at once while it lasts.
+  await page.locator('.junction').click();
+  await page.getByRole('button', { name: 'Crossfade' }).click();
+  // The videos now end at 4 s; the title, 4.5 s long, is what ends last.
+  expect((await status(page)).duration).toBeCloseTo(4.5, 1);
   const file = await exportVideo(page);
   expect(file.name).toMatch(/^Out\.(mp4|webm)$/);
   expect(errors).toEqual([]);

@@ -5,6 +5,7 @@ import { Editor, claim, el } from './editor';
 import { installExport } from './features/exportDialog';
 import { installHome, saveProjectFile } from './features/home';
 import { installRecord } from './features/record';
+import { installStickers } from './features/stickers';
 import { openStore } from './store/store';
 import { errorText, isBusy, toast } from './ui/feedback';
 import { icon } from './ui/icons';
@@ -112,7 +113,8 @@ export async function startApp(): Promise<void> {
   const recorder = installRecord(ed);
   const timeline = installTimeline(ed);
   installStage(ed);
-  installPanel(ed, { openExport: exporter.open, openRecord: recorder.open, askText });
+  const stickers = installStickers();
+  installPanel(ed, { openExport: exporter.open, openRecord: recorder.open, askText, pickSticker: stickers.pick });
   installTooltips();
 
   // --- action rail --------------------------------------------------------------------

@@ -2,18 +2,41 @@
 // added; with a clip selected it lists that clip's options, and each option
 // opens in the same place.
 
-import { FONTS, defaultText, makeClip, type Clip, type MediaInfo, type Project } from '../doc/model';
+import {
+  FILTERS,
+  FONTS,
+  MAX_TRANSITION,
+  TRANSITIONS,
+  defaultAdjust,
+  defaultChroma,
+  defaultText,
+  makeClip,
+  type Adjust,
+  type Clip,
+  type MediaInfo,
+  type Project,
+  type TransitionType,
+} from '../doc/model';
 import {
   addAudio,
+  addKeyframe,
   addLayer,
+  clearKeyframes,
   clipEnd,
   deleteClip,
   duplicateClip,
+  editTarget,
   findClip,
   insertPrimary,
-  layoutPrimary,
+  insertPrimaryAt,
+  keyframeAt,
+  keyframeTimes,
   mediaOf,
+  overlapOf,
+  removeKeyframe,
   setSpeed,
+  setTransition,
+  transformAt,
   shiftLayer,
   splitClip,
   trimEnd,
@@ -24,7 +47,41 @@ import { busy, errorText, toast } from './feedback';
 import { icon } from './icons';
 import { togglePopover, closePopover } from './popover';
 
-type View = 'main' | 'options' | 'trim' | 'mixer' | 'speed' | 'rotate' | 'alpha' | 'fit' | 'font' | 'color' | 'outline' | 'background';
+type View =
+  | 'main'
+  | 'options'
+  | 'trim'
+  | 'mixer'
+  | 'speed'
+  | 'rotate'
+  | 'alpha'
+  | 'fit'
+  | 'font'
+  | 'color'
+  | 'outline'
+  | 'background'
+  | 'keyframes'
+  | 'transition'
+  | 'chroma'
+  | 'filter'
+  | 'adjust';
+
+const TRANSITION_NAMES: Record<TransitionType, string> = {
+  crossfade: 'Crossfade',
+  'fade-black': 'Fade to black',
+  'fade-white': 'Fade to white',
+  'slide-left': 'Slide left',
+  'slide-right': 'Slide right',
+  'slide-up': 'Slide up',
+  'slide-down': 'Slide down',
+  'wipe-left': 'Wipe left',
+  'wipe-right': 'Wipe right',
+  zoom: 'Zoom',
+};
+const KEY_COLORS: [string, string][] = [
+  ['#00d000', 'Green'],
+  ['#0047ff', 'Blue'],
+];
 
 const COLORS = ['#ffffff', '#000000', '#ff4d4d', '#ff9f1c', '#ffd23f', '#3ddc84', '#2ec4b6', '#4c9dff', '#7b5cff', '#ff5ca8', '#8d6e63', '#9aa0ab'];
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8];
@@ -42,6 +99,11 @@ const TITLES: Record<View, string> = {
   color: 'Text Color',
   outline: 'Outline',
   background: 'Background',
+  keyframes: 'Keyframes',
+  transition: 'Transition',
+  chroma: 'Chroma Key',
+  filter: 'Color Filter',
+  adjust: 'Adjustment',
 };
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { html?: string } = {}, ...children: Node[]): HTMLElementTagNameMap[K] {
@@ -58,6 +120,8 @@ export interface PanelHooks {
   openRecord(): void;
   /** Asks for text; resolves with null when cancelled. */
   askText(initial: string): Promise<string | null>;
+  /** Asks for a sticker; resolves with null when cancelled. */
+  pickSticker(): Promise<string | null>;
 }
 
 export function installPanel(ed: Editor, hooks: PanelHooks): void {
@@ -83,7 +147,8 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
       play.innerHTML = icon(playing ? 'pause' : 'play');
       play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     }
-    if (view === 'trim') sync();
+    // Views whose values depend on where the playhead is.
+    if (view === 'trim' || view === 'keyframes' || view === 'alpha') sync();
   });
 
   // --- adding media ------------------------------------------------------------------
@@ -127,8 +192,7 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
         const clip = clipFor(p, info);
         if (where === 'primary') {
           if (last) {
-            p.primary.splice(p.primary.indexOf(last) + 1, 0, clip);
-            layoutPrimary(p);
+            insertPrimaryAt(p, clip, p.primary.indexOf(last) + 1);
           } else {
             insertPrimary(p, clip, at);
           }
@@ -160,6 +224,16 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
     void hooks.askText('').then((text) => {
       if (!text) return;
       const clip = makeClip('text', ed.project.photoDuration, { text: defaultText(text) });
+      ed.edit((p) => addLayer(p, clip, ed.time));
+      ed.select(clip.id);
+    });
+  });
+
+  el('layer-sticker').addEventListener('click', () => {
+    closePopover();
+    void hooks.pickSticker().then((glyph) => {
+      if (!glyph || !ed.isOpen) return;
+      const clip = makeClip('sticker', ed.project.photoDuration, { sticker: glyph });
       ed.edit((p) => addLayer(p, clip, ed.time));
       ed.select(clip.id);
     });
@@ -221,8 +295,34 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
         const clip = ed.selected;
         if (!clip) return;
         const value = read(clip);
+        input.disabled = Number.isNaN(value);
+        if (input.disabled) {
+          output.value = '';
+          return;
+        }
         if (document.activeElement !== input || Number(input.value) !== value) input.value = String(value);
         output.value = show(value);
+      },
+    };
+  }
+
+  /** Buttons of which one is chosen. */
+  function choice<T>(items: [T, string][], read: (c: Clip) => T, write: (p: Project, id: string, v: T) => void): { node: HTMLElement; sync(): void } {
+    const node = h('div', { className: 'chips' });
+    const buttons = items.map(([value, name]) => {
+      const b = h('button', { textContent: name });
+      b.addEventListener('click', () => {
+        const id = ed.selectedId;
+        if (id) ed.edit((p) => write(p, id, value));
+      });
+      node.append(b);
+      return b;
+    });
+    return {
+      node,
+      sync() {
+        const clip = ed.selected;
+        if (clip) buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(read(clip) === items[i]![0])));
       },
     };
   }
@@ -271,6 +371,7 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
   }
 
   function show(next: View): void {
+    ed.pickPoint = null;
     view = next;
     shownFor = ed.selectedId;
     render();
@@ -364,9 +465,14 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
       syncs.push(() => buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(ed.selected?.speed === SPEEDS[i]))));
     } else if (view === 'rotate') {
       const list = h('div', { className: 'list' });
+      // An animated layer turns as a whole: every keyframe by the same amount.
+      const turn = (c: Clip, by: number): void => {
+        c.transform.rotation = norm(c.transform.rotation + by);
+        for (const k of c.keyframes ?? []) k.rotation += by;
+      };
       const actions: [string, (c: Clip) => void][] = [
-        ['Rotate left', (c) => (c.transform.rotation = norm(c.transform.rotation - 90))],
-        ['Rotate right', (c) => (c.transform.rotation = norm(c.transform.rotation + 90))],
+        ['Rotate left', (c) => turn(c, -90)],
+        ['Rotate right', (c) => turn(c, 90)],
         ['Mirror left to right', (c) => (c.transform.flipH = !c.transform.flipH)],
         ['Mirror top to bottom', (c) => (c.transform.flipV = !c.transform.flipV)],
       ];
@@ -380,7 +486,18 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
       }
       body.append(list);
     } else if (view === 'alpha') {
-      use(slider('Opacity', 0, 100, 1, (c) => Math.round(c.transform.opacity * 100), (c, v) => (c.transform.opacity = v / 100), (v) => `${v}%`));
+      use(
+        slider(
+          'Opacity',
+          0,
+          100,
+          1,
+          (c) => Math.round(transformAt(c, ed.time).opacity * 100),
+          (c, v) => (editTarget(ed.project, c, ed.time).opacity = v / 100),
+          (v) => `${v}%`,
+        ),
+      );
+      if (clip.keyframes?.length) body.append(h('p', { textContent: 'This layer is animated: the opacity is set for the keyframe at the playhead.' }));
     } else if (view === 'fit') {
       const chips = h('div', { className: 'chips' });
       const options: [string, boolean][] = [
@@ -444,6 +561,166 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
       use(swatches((c) => c.text?.outline ?? '', (c, v) => (c.text!.outline = v), true));
     } else if (view === 'background') {
       use(swatches((c) => c.text?.background ?? '', (c, v) => (c.text!.background = v), true));
+    } else if (view === 'keyframes') {
+      const toggle = h('button', { textContent: 'Add keyframe' });
+      const previous = h('button', { textContent: 'Previous' });
+      const next = h('button', { textContent: 'Next' });
+      const clear = h('button', { textContent: 'Remove all' });
+      const count = h('p');
+      toggle.addEventListener('click', () => {
+        const id = ed.selectedId;
+        const c = ed.selected;
+        if (!id || !c) return;
+        const t = ed.time;
+        ed.edit((p) => (keyframeAt(p, c, t) ? removeKeyframe(p, id, t) : void addKeyframe(p, id, t)));
+      });
+      const jump = (direction: 1 | -1): void => {
+        const c = ed.selected;
+        if (!c) return;
+        const half = 0.5 / ed.project.fps;
+        const times = keyframeTimes(c).filter((t) => (direction > 0 ? t > ed.time + half : t < ed.time - half));
+        if (times.length) ed.seek(direction > 0 ? times[0]! : times[times.length - 1]!);
+      };
+      previous.addEventListener('click', () => jump(-1));
+      next.addEventListener('click', () => jump(1));
+      clear.addEventListener('click', () => {
+        const id = ed.selectedId;
+        if (id) ed.edit((p) => clearKeyframes(p, id));
+      });
+      body.append(
+        h('div', { className: 'list' }, toggle),
+        h('div', { className: 'chips' }, previous, next, clear),
+        count,
+        h('p', {
+          textContent:
+            'Add a keyframe, move the playhead, then move, resize or turn the layer: a second keyframe is added there, and the layer glides from one to the other.',
+        }),
+      );
+      syncs.push(() => {
+        const c = ed.selected;
+        if (!c) return;
+        const frame = 1 / ed.project.fps;
+        const inside = ed.time >= c.start - frame / 2 && ed.time <= clipEnd(c) + frame / 2;
+        const here = keyframeAt(ed.project, c, ed.time);
+        toggle.textContent = here ? 'Remove keyframe' : 'Add keyframe';
+        toggle.disabled = !inside;
+        const times = keyframeTimes(c);
+        previous.disabled = !times.some((t) => t < ed.time - frame / 2);
+        next.disabled = !times.some((t) => t > ed.time + frame / 2);
+        clear.disabled = !times.length;
+        count.textContent = times.length ? `${times.length} ${times.length === 1 ? 'keyframe' : 'keyframes'}` : 'No keyframes yet';
+      });
+    } else if (view === 'transition') {
+      const items: [TransitionType | null, string][] = [[null, 'None'], ...TRANSITIONS.map((t): [TransitionType, string] => [t, TRANSITION_NAMES[t]])];
+      use(choice(items, (c) => c.transition?.type ?? null, (p, id, type) => setTransition(p, id, type)));
+      use(
+        slider(
+          'Length',
+          0.1,
+          MAX_TRANSITION,
+          0.1,
+          (c) => (c.transition ? c.transition.duration : NaN),
+          (c, v) => c.transition && setTransition(ed.project, c.id, c.transition.type, v),
+          (v) => `${v.toFixed(1)} s`,
+        ),
+      );
+      const note = h('p');
+      body.append(note);
+      syncs.push(() => {
+        const c = ed.selected;
+        const index = c ? ed.project.primary.findIndex((x) => x.id === c.id) : -1;
+        const real = index > 0 ? overlapOf(ed.project, index) : 0;
+        note.textContent =
+          c?.transition && real < c.transition.duration - 1e-3
+            ? `Plays for ${real.toFixed(1)} s here: a transition can take at most half of the shorter clip.`
+            : 'The two clips overlap for the length of the transition, so the video gets that much shorter.';
+      });
+    } else if (view === 'chroma') {
+      const on = h('button', { textContent: 'On' });
+      on.addEventListener('click', () => {
+        const id = ed.selectedId;
+        if (id) ed.edit((p) => {
+          const c = findClip(p, id)!.clip;
+          if (c.chroma) delete c.chroma;
+          else c.chroma = defaultChroma();
+        });
+      });
+      const pick = h('button', { textContent: 'Pick from picture' });
+      pick.addEventListener('click', () => {
+        const id = ed.selectedId;
+        if (!id) return;
+        toast('Tap the colour to remove in the preview');
+        ed.pickPoint = (x, y) => {
+          const c = findClip(ed.project, id)?.clip;
+          const found = c ? ed.player.sample(c, x, y) : null;
+          if (!c || !found) return;
+          ed.edit((p) => {
+            const target = findClip(p, id)!.clip;
+            target.chroma = { ...(target.chroma ?? defaultChroma()), color: found };
+          });
+        };
+      });
+      const keys = h('div', { className: 'swatches' });
+      const keyButtons = KEY_COLORS.map(([value, name]) => {
+        const b = h('button');
+        b.style.backgroundColor = value;
+        b.setAttribute('aria-label', name);
+        b.addEventListener('click', () => {
+          const id = ed.selectedId;
+          if (id) ed.edit((p) => {
+            const c = findClip(p, id)!.clip;
+            c.chroma = { ...(c.chroma ?? defaultChroma()), color: value };
+          });
+        });
+        keys.append(b);
+        return b;
+      });
+      const shown = h('span', { className: 'key-shown' });
+      body.append(h('div', { className: 'chips' }, on, pick), h('label', { className: 'field' }, h('span', {}, document.createTextNode('Key color'), shown)), keys);
+      const percent = (v: number): string => `${v}%`;
+      use(slider('Threshold', 0, 100, 1, (c) => (c.chroma ? Math.round(c.chroma.threshold * 100) : NaN), (c, v) => c.chroma && (c.chroma.threshold = v / 100), percent));
+      use(slider('Soft edge', 0, 100, 1, (c) => (c.chroma ? Math.round(c.chroma.smooth * 100) : NaN), (c, v) => c.chroma && (c.chroma.smooth = v / 100), percent));
+      body.append(h('p', { textContent: 'Removes one colour from this layer, so what is underneath shows through. It works best on an evenly lit green or blue background.' }));
+      syncs.push(() => {
+        const chroma = ed.selected?.chroma;
+        on.setAttribute('aria-pressed', String(!!chroma));
+        shown.style.backgroundColor = chroma?.color ?? 'transparent';
+        keyButtons.forEach((b, i) => b.setAttribute('aria-checked', String(chroma?.color === KEY_COLORS[i]![0])));
+      });
+    } else if (view === 'filter') {
+      const items: [string | null, string][] = [[null, 'None'], ...FILTERS.map((name): [string, string] => [name, name])];
+      use(
+        choice(items, (c) => c.filter ?? null, (p, id, name) => {
+          const c = findClip(p, id)!.clip;
+          if (name) c.filter = name;
+          else delete c.filter;
+        }),
+      );
+    } else if (view === 'adjust') {
+      const part = (name: string, key: keyof Adjust): void =>
+        use(
+          slider(
+            name,
+            -100,
+            100,
+            1,
+            (c) => Math.round((c.adjust?.[key] ?? 0) * 100),
+            (c, v) => {
+              c.adjust = { ...(c.adjust ?? defaultAdjust()), [key]: v / 100 };
+            },
+            (v) => `${v > 0 ? '+' : ''}${v}`,
+          ),
+        );
+      part('Brightness', 'brightness');
+      part('Contrast', 'contrast');
+      part('Saturation', 'saturation');
+      part('Warmth', 'warmth');
+      const reset = h('button', { textContent: 'Reset' });
+      reset.addEventListener('click', () => {
+        const id = ed.selectedId;
+        if (id) ed.edit((p) => delete findClip(p, id)!.clip.adjust);
+      });
+      body.append(h('div', { className: 'chips' }, reset));
     }
     sync = () => syncs.forEach((fn) => fn());
     sync();
@@ -477,7 +754,8 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
 
   function renderOptions(clip: Clip, track: string): void {
     const media = mediaOf(ed.project, clip);
-    const title = clip.kind === 'text' ? 'Text' : (media?.name ?? 'Clip');
+    const title = clip.kind === 'text' ? 'Text' : clip.kind === 'sticker' ? 'Sticker' : (media?.name ?? 'Clip');
+    const pictured = clip.kind === 'video' || clip.kind === 'image';
     const grid = h('div', { className: 'options' });
     const option = (name: string, glyph: string, action: () => void): void => {
       const b = h('button', { html: `${icon(glyph)}<span>${name}</span>` });
@@ -495,13 +773,27 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
       option('Outline', 'opacity', () => show('outline'));
       option('Background', 'image', () => show('background'));
     }
+    if (clip.kind === 'sticker') {
+      option('Change', 'sticker', () => {
+        void hooks.pickSticker().then((glyph) => {
+          if (glyph) ed.edit((p) => (findClip(p, clip.id)!.clip.sticker = glyph));
+        });
+      });
+    }
     option('Trim / Split', 'cut', () => show('trim'));
+    if (track === 'primary' && ed.project.primary[0]?.id !== clip.id) option('Transition', 'transition', () => show('transition'));
     const sounds = clip.kind === 'audio' || (clip.kind === 'video' && media?.hasAudio);
     if (sounds) option('Mixer', 'volume', () => show('mixer'));
     if (clip.kind === 'video' || clip.kind === 'audio') option('Speed', 'speed', () => show('speed'));
     if (clip.kind !== 'audio') option('Rotate / Mirror', 'rotate', () => show('rotate'));
     if (track === 'primary') option('Fit / Fill', 'fit', () => show('fit'));
+    if (pictured) {
+      option('Color Filter', 'filter', () => show('filter'));
+      option('Adjustment', 'adjust', () => show('adjust'));
+    }
     if (track === 'layers') {
+      option('Keyframes', 'keyframe', () => show('keyframes'));
+      if (pictured) option('Chroma Key', 'chroma', () => show('chroma'));
       option('Alpha (Opacity)', 'opacity', () => show('alpha'));
       option('Bring Forward', 'front', () => ed.edit((p) => shiftLayer(p, clip.id, 1)));
       option('Send Backward', 'behind', () => ed.edit((p) => shiftLayer(p, clip.id, -1)));
@@ -514,7 +806,12 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
     const selected = ed.isOpen ? ed.selectedId : null;
     el('clip-delete').hidden = !selected;
     el('clip-duplicate').hidden = !selected;
-    if (selected !== shownFor || !selected) {
+    ed.pickPoint = null;
+    const asked = ed.viewRequest as View | null;
+    ed.viewRequest = null;
+    if (selected && asked && asked in TITLES) {
+      show(asked);
+    } else if (selected !== shownFor || !selected) {
       view = selected ? 'options' : 'main';
       shownFor = selected;
       render();

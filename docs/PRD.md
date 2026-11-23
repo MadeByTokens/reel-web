@@ -6,6 +6,8 @@ still owed: the review of the technical approach with the owner (section 11, ste
 two device spikes (steps 3 and 4), so nothing about speed or codec support has been measured
 on a tablet yet. Technical statements marked **(verify)** come from memory or from one search
 and remain unchecked unless the README says otherwise.
+A second pass the same day added transitions, keyframes, chroma key, filters and adjustments,
+stickers, waveforms, and layers that follow the main track.
 
 What was built differs from section 8 in three ways: the preview uses the browser's own
 video player for pictures (muted `<video>` elements kept in step with the playhead) and

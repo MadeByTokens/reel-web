@@ -1,7 +1,7 @@
 // The project: a non-destructive edit list. Source media is never changed;
 // every clip only says which part of which file is shown when, and how.
 
-export type ClipKind = 'video' | 'image' | 'text' | 'audio';
+export type ClipKind = 'video' | 'image' | 'text' | 'sticker' | 'audio';
 export type TrackName = 'primary' | 'layers' | 'audio';
 
 export interface MediaInfo {
@@ -47,6 +47,58 @@ export interface TextStyle {
   background: string;
 }
 
+/** One moment of a layer's animation. Between two of them the values glide. */
+export interface Keyframe {
+  /** Seconds after the start of the clip. */
+  t: number;
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+}
+
+/** Makes one colour of a layer see-through (green screen). */
+export interface Chroma {
+  /** The colour removed. */
+  color: string;
+  /** How far from that colour still counts, 0 to 1. */
+  threshold: number;
+  /** How soft the edge is, 0 to 1. */
+  smooth: number;
+}
+
+/** Colour changes; every value runs from -1 to 1 and 0 leaves the picture alone. */
+export interface Adjust {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+}
+
+export const TRANSITIONS = [
+  'crossfade',
+  'fade-black',
+  'fade-white',
+  'slide-left',
+  'slide-right',
+  'slide-up',
+  'slide-down',
+  'wipe-left',
+  'wipe-right',
+  'zoom',
+] as const;
+export type TransitionType = (typeof TRANSITIONS)[number];
+
+/** How a main-track clip takes over from the one before it. The two overlap for its length. */
+export interface Transition {
+  type: TransitionType;
+  duration: number;
+}
+
+/** Ready-made looks. */
+export const FILTERS = ['Vivid', 'Bright', 'Warm', 'Cool', 'Faded', 'Vintage', 'Sepia', 'Mono', 'Noir'] as const;
+
 export interface Clip {
   id: string;
   kind: ClipKind;
@@ -71,6 +123,17 @@ export interface Clip {
   fill: boolean;
   transform: Transform;
   text?: TextStyle;
+  /** The picture of a sticker: one emoji. */
+  sticker?: string;
+  /** Layers only. When present and not empty, these replace the place, size, turn and opacity in `transform`. Sorted by time. */
+  keyframes?: Keyframe[];
+  /** Layers only. */
+  chroma?: Chroma;
+  /** One of FILTERS. */
+  filter?: string;
+  adjust?: Adjust;
+  /** Main track only; ignored on the first clip. */
+  transition?: Transition;
 }
 
 export interface Project {
@@ -122,6 +185,27 @@ export const ASPECTS: Aspect[] = [
 export const MIN_DURATION = 0.1;
 export const MAX_SPEED = 8;
 export const MIN_SPEED = 0.125;
+export const MAX_TRANSITION = 5;
+export const MAX_KEYFRAMES = 200;
+
+/** How long a main-track clip overlaps the one before it: its transition, cut down to what both clips can spare. */
+export function overlapOf(p: Project, index: number): number {
+  const clip = p.primary[index];
+  const prev = p.primary[index - 1];
+  if (!clip?.transition || !prev) return 0;
+  const most = Math.min(prev.duration, clip.duration) / 2;
+  return Math.max(0, Math.floor(Math.min(clip.transition.duration, most) * p.fps + 1e-6) / p.fps);
+}
+
+/** Places the main-track clips one after another, each starting where the last ends less its transition. */
+export function layoutPrimary(p: Project): void {
+  let at = 0;
+  p.primary.forEach((clip, index) => {
+    clip.start = Math.max(0, Math.round((at - overlapOf(p, index)) * p.fps) / p.fps);
+    clip.row = 0;
+    at = clip.start + clip.duration;
+  });
+}
 
 export function newId(): string {
   const bytes = new Uint8Array(8);
@@ -135,6 +219,14 @@ export function defaultTransform(): Transform {
 
 export function defaultText(text: string): TextStyle {
   return { text, color: '#ffffff', font: 'Sans', size: 0.1, bold: true, align: 'center', outline: '#000000', background: '' };
+}
+
+export function defaultChroma(): Chroma {
+  return { color: '#00d000', threshold: 0.4, smooth: 0.2 };
+}
+
+export function defaultAdjust(): Adjust {
+  return { brightness: 0, contrast: 0, saturation: 0, warmth: 0 };
 }
 
 export function newProject(name: string, width: number, height: number): Project {
@@ -189,12 +281,12 @@ function readClip(raw: unknown, media: Map<string, MediaInfo>, track: TrackName)
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
   const kind = r.kind;
-  if (kind !== 'video' && kind !== 'image' && kind !== 'text' && kind !== 'audio') return null;
+  if (kind !== 'video' && kind !== 'image' && kind !== 'text' && kind !== 'sticker' && kind !== 'audio') return null;
   if (!idOk(r.id)) return null;
   if ((track === 'audio') !== (kind === 'audio')) return null;
-  if (track === 'primary' && kind === 'text') return null;
+  if (track === 'primary' && (kind === 'text' || kind === 'sticker')) return null;
   let source: MediaInfo | undefined;
-  if (kind !== 'text') {
+  if (kind !== 'text' && kind !== 'sticker') {
     if (!idOk(r.mediaId)) return null;
     source = media.get(r.mediaId);
     if (!source || source.kind !== kind) return null;
@@ -244,6 +336,50 @@ function readClip(raw: unknown, media: Map<string, MediaInfo>, track: TrackName)
       outline: color(s.outline, d.outline),
       background: color(s.background, d.background),
     };
+  }
+  if (kind === 'sticker') {
+    if (typeof r.sticker !== 'string' || !r.sticker || r.sticker.length > 32) return null;
+    clip.sticker = r.sticker;
+  }
+  const pictured = kind === 'video' || kind === 'image';
+  if (track === 'layers' && Array.isArray(r.keyframes)) {
+    const frames: Keyframe[] = [];
+    for (const item of r.keyframes.slice(0, MAX_KEYFRAMES) as unknown[]) {
+      if (typeof item !== 'object' || item === null) continue;
+      const k = item as Record<string, unknown>;
+      if (typeof k.t !== 'number' || !Number.isFinite(k.t)) continue;
+      frames.push({
+        t: num(k.t, -MAX_TIME, MAX_TIME, 0),
+        x: num(k.x, -2, 3, 0.5),
+        y: num(k.y, -2, 3, 0.5),
+        scale: num(k.scale, 0.02, 20, 1),
+        rotation: num(k.rotation, -3600, 3600, 0),
+        opacity: num(k.opacity, 0, 1, 1),
+      });
+    }
+    frames.sort((a, b) => a.t - b.t);
+    if (frames.length) clip.keyframes = frames;
+  }
+  if (track === 'layers' && pictured && typeof r.chroma === 'object' && r.chroma !== null) {
+    const c = r.chroma as Record<string, unknown>;
+    const d = defaultChroma();
+    clip.chroma = { color: color(c.color, d.color) || d.color, threshold: num(c.threshold, 0, 1, d.threshold), smooth: num(c.smooth, 0, 1, d.smooth) };
+  }
+  if (pictured && typeof r.filter === 'string' && (FILTERS as readonly string[]).includes(r.filter)) clip.filter = r.filter;
+  if (pictured && typeof r.adjust === 'object' && r.adjust !== null) {
+    const a = r.adjust as Record<string, unknown>;
+    clip.adjust = {
+      brightness: num(a.brightness, -1, 1, 0),
+      contrast: num(a.contrast, -1, 1, 0),
+      saturation: num(a.saturation, -1, 1, 0),
+      warmth: num(a.warmth, -1, 1, 0),
+    };
+  }
+  if (track === 'primary' && typeof r.transition === 'object' && r.transition !== null) {
+    const x = r.transition as Record<string, unknown>;
+    if ((TRANSITIONS as readonly string[]).includes(x.type as string)) {
+      clip.transition = { type: x.type as TransitionType, duration: num(x.duration, MIN_DURATION, MAX_TRANSITION, 1) };
+    }
   }
   return clip;
 }
@@ -308,11 +444,6 @@ export function parseProject(text: string): Project | null {
     layers: clips(r.layers, 'layers'),
     audio: clips(r.audio, 'audio'),
   };
-  let at = 0;
-  for (const clip of project.primary) {
-    clip.start = at;
-    clip.row = 0;
-    at += clip.duration;
-  }
+  layoutPrimary(project);
   return project;
 }

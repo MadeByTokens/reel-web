@@ -2,7 +2,7 @@
 // be moved, resized and turned directly on the picture.
 
 import type { Clip } from '../doc/model';
-import { clipEnd, findClip, mediaOf, visibleAt } from '../doc/ops';
+import { clipEnd, editTarget, findClip, mediaOf, nearAngle, neighbourRotation, transformAt, visibleAt } from '../doc/ops';
 import { el, type Editor } from '../editor';
 import { baseBox } from '../render/compose';
 import { icon } from './icons';
@@ -60,7 +60,8 @@ export function installStage(ed: Editor): void {
   function size(clip: Clip): { width: number; height: number } {
     const media = mediaOf(ed.project, clip);
     const b = baseBox(ed.project, clip, media ? { width: media.width, height: media.height } : null);
-    return { width: b.width * clip.transform.scale, height: b.height * clip.transform.scale };
+    const scale = transformAt(clip, ed.time).scale;
+    return { width: b.width * scale, height: b.height * scale };
   }
 
   function update(): void {
@@ -71,11 +72,12 @@ export function installStage(ed: Editor): void {
     box.hidden = !clip;
     if (!clip) return;
     const s = size(clip);
+    const now = transformAt(clip, ed.time);
     box.style.width = `${s.width * k}px`;
     box.style.height = `${s.height * k}px`;
-    box.style.left = `${clip.transform.x * p.width * k - (s.width * k) / 2}px`;
-    box.style.top = `${clip.transform.y * p.height * k - (s.height * k) / 2}px`;
-    box.style.transform = `rotate(${clip.transform.rotation}deg)`;
+    box.style.left = `${now.x * p.width * k - (s.width * k) / 2}px`;
+    box.style.top = `${now.y * p.height * k - (s.height * k) / 2}px`;
+    box.style.transform = `rotate(${now.rotation}deg)`;
   }
 
   ed.onChange(fit);
@@ -95,9 +97,10 @@ export function installStage(ed: Editor): void {
     const layers = visibleAt(p, ed.time).filter((c) => p.layers.includes(c));
     for (const clip of layers.reverse()) {
       const s = size(clip);
-      const a = (-clip.transform.rotation * Math.PI) / 180;
-      const dx = x - clip.transform.x * p.width;
-      const dy = y - clip.transform.y * p.height;
+      const now = transformAt(clip, ed.time);
+      const a = (-now.rotation * Math.PI) / 180;
+      const dx = x - now.x * p.width;
+      const dy = y - now.y * p.height;
       const lx = dx * Math.cos(a) - dy * Math.sin(a);
       const ly = dx * Math.sin(a) + dy * Math.cos(a);
       if (Math.abs(lx) <= s.width / 2 + 8 && Math.abs(ly) <= s.height / 2 + 8) return clip;
@@ -122,7 +125,7 @@ export function installStage(ed: Editor): void {
   };
 
   function begin(clip: Clip, mode: Mode | 'pinch', at: { x: number; y: number }): void {
-    const t = clip.transform;
+    const t = transformAt(clip, ed.time);
     drag = { id: clip.id, mode, start: at, base: { x: t.x, y: t.y, scale: t.scale, rotation: t.rotation }, moved: false };
     if (mode === 'pinch') drag.pinch = pinchState();
     ed.begin();
@@ -142,6 +145,12 @@ export function installStage(ed: Editor): void {
       return;
     }
     const at = point(e);
+    if (ed.pickPoint) {
+      const pick = ed.pickPoint;
+      ed.pickPoint = null;
+      pick(at.x / ed.project.width, at.y / ed.project.height);
+      return;
+    }
     pointers.set(e.pointerId, at);
     overlay.setPointerCapture(e.pointerId);
     const selected = target();
@@ -174,7 +183,14 @@ export function installStage(ed: Editor): void {
     const p = ed.project;
     const found = findClip(p, drag.id);
     if (!found) return;
-    const t = found.clip.transform;
+    // A tap that wobbles is not a move, and must not leave a keyframe behind.
+    if (drag.mode === 'move' && !drag.moved && Math.hypot(at.x - drag.start.x, at.y - drag.start.y) * k < 4) return;
+    // Once a layer is animated, what is changed is its keyframe at the playhead.
+    const t = editTarget(p, found.clip, ed.time);
+    const turn = (deg: number): number => {
+      const near = neighbourRotation(found.clip, ed.time);
+      return near === null ? snapAngle(deg) : nearAngle(snapAngle(deg), near);
+    };
     const cx = drag.base.x * p.width;
     const cy = drag.base.y * p.height;
     if (drag.mode === 'move') {
@@ -200,11 +216,11 @@ export function installStage(ed: Editor): void {
     } else if (drag.mode === 'rotate') {
       const a0 = Math.atan2(drag.start.y - cy, drag.start.x - cx);
       const a1 = Math.atan2(at.y - cy, at.x - cx);
-      t.rotation = snapAngle(drag.base.rotation + ((a1 - a0) * 180) / Math.PI);
+      t.rotation = turn(drag.base.rotation + ((a1 - a0) * 180) / Math.PI);
     } else if (drag.pinch && pointers.size >= 2) {
       const now = pinchState();
       t.scale = Math.max(0.03, Math.min(12, drag.base.scale * (now.distance / drag.pinch.distance)));
-      t.rotation = snapAngle(drag.base.rotation + ((now.angle - drag.pinch.angle) * 180) / Math.PI);
+      t.rotation = turn(drag.base.rotation + ((now.angle - drag.pinch.angle) * 180) / Math.PI);
     }
     ed.live();
   });

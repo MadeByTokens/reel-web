@@ -16,17 +16,17 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * Programs a clip's loudness, with its fades, on a gain parameter. `at` turns
  * a timeline time into the context's time; `from` is where playing starts.
  */
-export function scheduleGain(g: AudioParam, clip: Clip, from: number, at: (timeline: number) => number): void {
+export function scheduleGain(g: AudioParam, clip: Clip, from: number, at: (timeline: number) => number, p?: Project): void {
   const begin = Math.max(from, clip.start);
-  const { fadeIn, fadeOut } = fades(clip);
-  g.setValueAtTime(gainAt(clip, begin), at(begin));
+  const { fadeIn, fadeOut } = fades(clip, p);
+  g.setValueAtTime(gainAt(clip, begin, p), at(begin));
   if (fadeIn > 0 && begin < clip.start + fadeIn) {
     const top = clip.start + fadeIn;
-    g.linearRampToValueAtTime(gainAt(clip, top), at(top));
+    g.linearRampToValueAtTime(gainAt(clip, top, p), at(top));
   }
   if (fadeOut > 0) {
     const fadeStart = Math.max(begin, clipEnd(clip) - fadeOut);
-    g.setValueAtTime(gainAt(clip, fadeStart), at(fadeStart));
+    g.setValueAtTime(gainAt(clip, fadeStart, p), at(fadeStart));
     g.linearRampToValueAtTime(0, at(clipEnd(clip)));
   }
 }
@@ -96,20 +96,20 @@ export class AudioPreview {
     this.timeStart = from;
     this.ctxStart = ctx.currentTime + LEAD;
     for (const clip of audibleBetween(p, from, projectDuration(p) + 1)) {
-      void this.feed(ctx, clip, from, generation).catch(() => {
+      void this.feed(ctx, p, clip, from, generation).catch(() => {
         // A clip whose sound cannot be decoded plays silently.
       });
     }
   }
 
-  private async feed(ctx: AudioContext, clip: Clip, from: number, generation: number): Promise<void> {
+  private async feed(ctx: AudioContext, p: Project, clip: Clip, from: number, generation: number): Promise<void> {
     if (!clip.mediaId) return;
     const provider = await this.media.audioProvider(clip.mediaId);
     if (!provider || generation !== this.generation) return;
     const gain = ctx.createGain();
     gain.connect(ctx.destination);
     this.gains.set(clip.id, gain);
-    scheduleGain(gain.gain, clip, from, (t) => Math.max(ctx.currentTime, this.ctxStart + (t - from)));
+    scheduleGain(gain.gain, clip, from, (t) => Math.max(ctx.currentTime, this.ctxStart + (t - from)), p);
 
     const toCtx = (timeline: number): number => this.ctxStart + (timeline - from);
     const srcFrom = clip.offset + Math.max(0, from - clip.start) * clip.speed;

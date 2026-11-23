@@ -32,6 +32,8 @@ const THUMB_IDLE_MS = 8000;
 const THUMB_HEIGHT = 72;
 /** Files larger than this are not decoded whole when the streaming decoder is unavailable. */
 const MAX_WHOLE_DECODE = 300 << 20;
+/** How finely the loudness of a sound is kept for drawing its waveform. */
+export const PEAKS_PER_SECOND = 40;
 
 function waitFor(el: HTMLMediaElement, event: string, ms: number): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -184,6 +186,10 @@ export class MediaLibrary {
   private disposed = false;
   /** Called when a new thumbnail is ready, so the timeline can redraw. */
   onThumb: () => void = () => {};
+  /** Called as waveforms are worked out. */
+  onPeaks: () => void = () => {};
+  private readonly peaks = new Map<string, Uint8Array>();
+  private peakChain: Promise<void> = Promise.resolve();
   /** Called when a full-size picture has been decoded, so the preview can repaint. */
   onPicture: () => void = () => {};
 
@@ -390,6 +396,52 @@ export class MediaLibrary {
     }
   }
 
+  // --- waveforms ----------------------------------------------------------------
+
+  /**
+   * The loudness of a file's sound, PEAKS_PER_SECOND values a second from 0 to
+   * 255. The first call starts the work and the values fill in as it goes;
+   * null when the file is not known.
+   */
+  waveform(id: string): Uint8Array | null {
+    const known = this.peaks.get(id);
+    if (known) return known;
+    const item = this.items.get(id);
+    if (!item || item.info.duration <= 0) return null;
+    const peaks = new Uint8Array(Math.ceil(item.info.duration * PEAKS_PER_SECOND) + 1);
+    this.peaks.set(id, peaks);
+    // One file at a time, so drawing waveforms never competes with itself for the decoder.
+    this.peakChain = this.peakChain.then(() => this.measure(id, peaks, item.info.duration)).catch(() => {});
+    return peaks;
+  }
+
+  private async measure(id: string, peaks: Uint8Array, duration: number): Promise<void> {
+    const provider = await this.audioProvider(id);
+    if (!provider || this.disposed) return;
+    let shown = performance.now();
+    for await (const chunk of provider.chunks(0, duration)) {
+      if (this.disposed) return;
+      const rate = chunk.buffer.sampleRate;
+      const perPeak = rate / PEAKS_PER_SECOND;
+      const base = chunk.timestamp * PEAKS_PER_SECOND;
+      for (let channel = 0; channel < Math.min(2, chunk.buffer.numberOfChannels); channel++) {
+        const data = chunk.buffer.getChannelData(channel);
+        for (let i = 0; i < data.length; i++) {
+          const slot = Math.floor(base + i / perPeak);
+          const value = Math.min(255, Math.abs(data[i]!) * 255);
+          if (slot >= 0 && slot < peaks.length && value > peaks[slot]!) peaks[slot] = value;
+        }
+      }
+      // Let the page breathe, and show what there is so far a few times a second.
+      await new Promise((r) => setTimeout(r, 0));
+      if (performance.now() - shown > 300) {
+        shown = performance.now();
+        this.onPeaks();
+      }
+    }
+    if (!this.disposed) this.onPeaks();
+  }
+
   // --- thumbnails ---------------------------------------------------------------
 
   /** Seconds between thumbnails of a video: more for long files, to bound memory. */
@@ -503,5 +555,6 @@ export class MediaLibrary {
     this.audio.clear();
     this.thumbs.clear();
     this.thumbVideos.clear();
+    this.peaks.clear();
   }
 }
