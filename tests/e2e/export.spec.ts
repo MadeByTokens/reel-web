@@ -28,6 +28,21 @@ test('exports a video with picture and sound', async ({ page, browserName }) => 
   expect(errors).toEqual([]);
 });
 
+test('falls back to uncompressed sound when the browser has no sound encoder', async ({ page }) => {
+  await openApp(page);
+  await newProject(page, 'Plain');
+  await addMedia(page, 'red.png');
+  await addAudio(page, 'tone.wav');
+  const supported = await page.evaluate(() => typeof VideoEncoder !== 'undefined');
+  test.skip(!supported, 'this browser has no video encoder');
+  await page.evaluate(() => {
+    (window as unknown as { AudioEncoder: unknown }).AudioEncoder = undefined;
+  });
+  const file = await exportVideo(page);
+  expect(file.name).toMatch(/^Plain\.(mov|webm)$/);
+  await expect(page.locator('#ready-notes')).toContainText(/QuickTime|silent/);
+});
+
 test('exports pictures only', async ({ page }) => {
   const errors = await openApp(page);
   await newProject(page, 'Stills', '1:1');

@@ -6,12 +6,14 @@ import {
   BufferTarget,
   CanvasSink,
   CanvasSource,
+  MovOutputFormat,
   Mp4OutputFormat,
   Output,
   StreamTarget,
   WebMOutputFormat,
   getFirstEncodableAudioCodec,
   getFirstEncodableVideoCodec,
+  type AudioCodec,
   type InputVideoTrack,
   type OutputFormat,
   type StreamTargetChunk,
@@ -178,9 +180,16 @@ export async function exportProject(
 
   const wantsAudio = audibleBetween(p, 0, duration).length > 0;
   const preferred = extension === 'mp4' ? (['aac', 'opus'] as const) : (['opus', 'vorbis'] as const);
-  const audioCodec = wantsAudio
+  let audioCodec: AudioCodec | null = wantsAudio
     ? await getFirstEncodableAudioCodec([...preferred], { numberOfChannels: 2, sampleRate: SAMPLE_RATE, bitrate: 192_000 })
     : null;
+  if (wantsAudio && !audioCodec && extension === 'mp4') {
+    // No sound encoder at all: plain uncompressed sound in a QuickTime file plays almost everywhere.
+    format = new MovOutputFormat({ fastStart: writable ? false : 'in-memory' });
+    extension = 'mov';
+    audioCodec = 'pcm-s16';
+    notes.push('This browser cannot compress sound, so the video was saved as a QuickTime file with uncompressed sound.');
+  }
   if (wantsAudio && !audioCodec) notes.push('This browser cannot encode sound, so the video is silent.');
 
   const canvas = document.createElement('canvas');
@@ -273,7 +282,7 @@ export async function exportProject(
   }
 
   if (silent.size) notes.push('The sound of some clips could not be read and was left out.');
-  const mime = await output.getMimeType().catch(() => (extension === 'mp4' ? 'video/mp4' : 'video/webm'));
+  const mime = await output.getMimeType().catch(() => (extension === 'webm' ? 'video/webm' : extension === 'mov' ? 'video/quicktime' : 'video/mp4'));
   const simple = mime.split(';')[0]!;
   if (target instanceof BufferTarget) return { blob: new Blob([target.buffer!], { type: simple }), extension, notes };
   const file = await store.file(EXPORT_PATH);

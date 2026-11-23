@@ -56,7 +56,7 @@ self.addEventListener('fetch', (event) => {
 export default defineConfig({
   // Relative base so the build works from any GitHub Pages sub-path.
   base: './',
-  build: { target: 'es2022' },
+  build: { target: 'es2022', chunkSizeWarningLimit: 900 },
   worker: { format: 'es' },
   plugins: [serviceWorker()],
   test: { include: ['src/**/*.test.ts'] },

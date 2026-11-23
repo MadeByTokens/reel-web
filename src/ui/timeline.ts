@@ -15,6 +15,7 @@ const MIN_PPS = 4;
 const MAX_PPS = 480;
 const LONG_PRESS = 380;
 const SLOP = 7;
+const SNAP_PX = 9;
 
 export function formatTime(t: number, fps = 30): string {
   const frames = Math.round(Math.max(0, t) * fps);
@@ -297,6 +298,30 @@ export function installTimeline(ed: Editor): Timeline {
 
   const contentX = (clientX: number): number => clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft;
 
+  /** Times a dragged edge sticks to: the playhead, the start, and the edges of other clips. */
+  function snapTargets(ignore: string): number[] {
+    const p = ed.project;
+    const out = [0, ed.time];
+    for (const clip of [...p.primary, ...p.layers, ...p.audio]) {
+      if (clip.id !== ignore) out.push(clip.start, clipEnd(clip));
+    }
+    return out;
+  }
+
+  /** The nearest target within a few pixels of a time, or the time itself. */
+  function snapTo(t: number, targets: number[]): { time: number; snapped: boolean } {
+    let best = t;
+    let distance = SNAP_PX / pps;
+    for (const target of targets) {
+      const d = Math.abs(target - t);
+      if (d < distance) {
+        distance = d;
+        best = target;
+      }
+    }
+    return { time: best, snapped: best !== t };
+  }
+
   function startTrim(e: PointerEvent, id: string, side: 'left' | 'right', grip: HTMLElement): void {
     const found = findClip(ed.project, id);
     if (!found) return;
@@ -307,13 +332,15 @@ export function installTimeline(ed: Editor): Timeline {
     gesture = true;
     const x0 = contentX(e.clientX);
     const base = { start: found.clip.start, end: clipEnd(found.clip) };
+    // On the main track a clip's start is pinned, so only its end can meet other edges.
+    const targets = found.track === 'primary' && side === 'left' ? [] : snapTargets(id);
     ed.begin();
     const move = (ev: PointerEvent): void => {
       if (ev.pointerId !== e.pointerId) return;
       const dt = (contentX(ev.clientX) - x0) / pps;
       ed.revert();
-      if (side === 'left') trimStart(ed.project, id, base.start + dt);
-      else trimEnd(ed.project, id, base.end + dt);
+      if (side === 'left') trimStart(ed.project, id, snapTo(base.start + dt, targets).time);
+      else trimEnd(ed.project, id, snapTo(base.end + dt, targets).time);
       ed.live();
     };
     const up = (ev: PointerEvent): void => {
@@ -336,7 +363,8 @@ export function installTimeline(ed: Editor): Timeline {
     const x0 = e.clientX;
     const y0 = e.clientY;
     const cx0 = contentX(e.clientX);
-    const base = { start: found.clip.start, row: found.clip.row, track: found.track };
+    const base = { start: found.clip.start, row: found.clip.row, track: found.track, duration: found.clip.duration };
+    const targets = snapTargets(id);
     let lifted = false;
     let moved = false;
     let timer = 0;
@@ -380,7 +408,11 @@ export function installTimeline(ed: Editor): Timeline {
         reorderPrimary(p, id, index);
       } else {
         const dt = (contentX(ev.clientX) - cx0) / pps;
-        moveClip(p, id, base.start + dt, base.row + Math.round(dy / (ROW_H + ROW_GAP)));
+        // Either end of the clip may stick to an edge; the start wins a tie.
+        const head = snapTo(base.start + dt, targets);
+        const tail = snapTo(base.start + dt + base.duration, targets);
+        const start = head.snapped ? head.time : tail.snapped ? tail.time - base.duration : base.start + dt;
+        moveClip(p, id, start, base.row + Math.round(dy / (ROW_H + ROW_GAP)));
       }
       ed.live();
     };
