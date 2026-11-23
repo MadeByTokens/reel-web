@@ -24,7 +24,7 @@ import { audibleBetween, clipEnd, projectDuration, visibleAt } from '../doc/ops'
 import { compose, type Drawable } from '../render/compose';
 import type { Store } from '../store/store';
 import { scheduleGain } from './audio';
-import { makeVideoElement, type MediaLibrary } from './library';
+import { makeVideoElement, primeVideo, type MediaLibrary } from './library';
 
 export interface ExportOptions {
   width: number;
@@ -83,6 +83,7 @@ function decoderFrames(track: InputVideoTrack): FrameProvider {
 /** Slower stand-in for files the frame decoder cannot read: seek the browser's own player. */
 function elementFrames(url: string): FrameProvider {
   const video = makeVideoElement(url);
+  let primed = false;
   const until = (event: string): Promise<void> =>
     new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => done(new Error('A video stopped responding')), 20_000);
@@ -101,6 +102,10 @@ function elementFrames(url: string): FrameProvider {
   return {
     async at(s) {
       if (video.readyState < 1) await until('loadedmetadata');
+      if (!primed) {
+        primed = true;
+        await primeVideo(video);
+      }
       const target = Math.min(s, Math.max(0, video.duration - 0.03));
       if (Math.abs(video.currentTime - target) > 1e-3 || video.readyState < 2) {
         const seeked = until('seeked');
@@ -198,7 +203,7 @@ export async function exportProject(
   const ctx = canvas.getContext('2d', { alpha: false })!;
 
   const target = writable
-    ? new StreamTarget(writable as unknown as WritableStream<StreamTargetChunk>, { chunked: true })
+    ? new StreamTarget(writable as WritableStream<StreamTargetChunk>, { chunked: true })
     : new BufferTarget();
   const output = new Output({ format, target });
   const videoSource = new CanvasSource(canvas, { codec: videoCodec, bitrate, keyFrameInterval: 2 });

@@ -16,6 +16,9 @@ type FileHandle = FileSystemFileHandle & { createSyncAccessHandle(): Promise<Syn
 export type WriteRequest =
   | { type: 'write'; path: string; data: Blob | Uint8Array }
   | { type: 'remove'; path: string }
+  | { type: 'streamOpen'; path: string }
+  | { type: 'streamWrite'; position: number; data: Uint8Array }
+  | { type: 'streamClose' }
   | { type: 'probe' };
 
 export type WorkerReply =
@@ -66,8 +69,44 @@ async function write(seq: number, path: string, data: Blob | Uint8Array): Promis
   }
 }
 
+// One file can be open for writing in pieces at any position: the export target.
+let stream: SyncHandle | null = null;
+
+async function streamOpen(path: string): Promise<void> {
+  stream?.close();
+  stream = null;
+  const parts = split(path);
+  const name = parts.pop()!;
+  const dir = await resolveDir(parts, true);
+  const file = (await dir.getFileHandle(name, { create: true })) as FileHandle;
+  stream = await file.createSyncAccessHandle();
+  stream.truncate(0);
+}
+
+function streamWrite(position: number, data: Uint8Array): void {
+  if (!stream) throw new Error('No file is open');
+  let done = 0;
+  while (done < data.length) {
+    const wrote = stream.write(data.subarray(done), { at: position + done });
+    if (wrote <= 0) throw new Error('Storage is full');
+    done += wrote;
+  }
+}
+
+function streamClose(): void {
+  if (!stream) return;
+  try {
+    stream.flush();
+  } finally {
+    stream.close();
+    stream = null;
+  }
+}
+
 async function remove(path: string): Promise<void> {
   const parts = split(path);
+  // An export that failed or was cancelled leaves its file open; it cannot be removed until closed.
+  if (parts[0] === 'exports') streamClose();
   const name = parts.pop()!;
   try {
     const dir = await resolveDir(parts, false);
@@ -86,6 +125,9 @@ self.onmessage = (event: MessageEvent<{ seq: number; req: WriteRequest }>) => {
     try {
       if (req.type === 'write') await write(seq, req.path, req.data);
       else if (req.type === 'remove') await remove(req.path);
+      else if (req.type === 'streamOpen') await streamOpen(req.path);
+      else if (req.type === 'streamWrite') streamWrite(req.position, req.data);
+      else if (req.type === 'streamClose') streamClose();
       else {
         // Prove that writing really works before the app promises to keep anything.
         await write(seq, '.probe/probe', new Uint8Array([1]));

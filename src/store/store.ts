@@ -14,10 +14,16 @@ export interface Store {
   remove(path: string): Promise<void>;
   /** Names directly inside a folder. */
   list(dir: string): Promise<string[]>;
-  /** A stream that writes straight into a file, where the browser has one. */
-  writable(path: string): Promise<FileSystemWritableFileStream | null>;
+  /** A stream that writes pieces at any position straight into a file, or null where files only live in memory. */
+  writable(path: string): Promise<WritableStream<PositionedChunk> | null>;
   /** Resolves when every write sent so far has finished. */
   idle(): Promise<void>;
+}
+
+export interface PositionedChunk {
+  type: 'write';
+  data: Uint8Array<ArrayBuffer>;
+  position: number;
 }
 
 export class MemoryStore implements Store {
@@ -126,18 +132,24 @@ class OpfsStore implements Store {
     }
   }
 
-  async writable(path: string): Promise<FileSystemWritableFileStream | null> {
+  async writable(path: string): Promise<WritableStream<PositionedChunk> | null> {
     try {
-      const parts = path.split('/');
-      const name = parts.pop()!;
-      let dir = await navigator.storage.getDirectory();
-      for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: true });
-      const handle = await dir.getFileHandle(name, { create: true });
-      if (typeof handle.createWritable !== 'function') return null;
-      return await handle.createWritable();
+      await this.request({ type: 'streamOpen', path });
     } catch {
       return null;
     }
+    let closed = false;
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      await this.request({ type: 'streamClose' });
+    };
+    // Each piece waits for the worker's answer, so a slow disk slows the encoder instead of filling memory.
+    return new WritableStream<PositionedChunk>({
+      write: (chunk) => this.request({ type: 'streamWrite', position: chunk.position, data: chunk.data }),
+      close,
+      abort: close,
+    });
   }
 
   idle(): Promise<void> {

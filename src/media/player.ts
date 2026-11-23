@@ -35,7 +35,7 @@ export class Player {
   onPaint: () => void = () => {};
 
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly videos = new Map<string, { el: HTMLVideoElement; seekStarted: number }>();
+  private readonly videos = new Map<string, { el: HTMLVideoElement; seekStarted: number; primed: boolean }>();
   private dirty = true;
   private raf = 0;
   private wallStart = 0;
@@ -139,13 +139,21 @@ export class Player {
         el.addEventListener('seeked', mark);
         el.addEventListener('loadeddata', mark);
         el.addEventListener('canplay', mark);
-        entry = { el, seekStarted: 0 };
+        entry = { el, seekStarted: 0, primed: false };
         this.videos.set(clip.id, entry);
       }
       const { el } = entry;
       const active = t >= clip.start && t < clipEnd(clip);
       const target = this.sourceTime(clip, t);
       if (el.readyState < 1) {
+        busy = true;
+        continue;
+      }
+      if (!entry.primed) {
+        // Some tablets load no picture data until a video has played: start it, and the
+        // lines below stop it again on the next frame unless it should be playing.
+        entry.primed = true;
+        void el.play().catch(() => {});
         busy = true;
         continue;
       }

@@ -55,6 +55,19 @@ export function makeVideoElement(url: string): HTMLVideoElement {
   return video;
 }
 
+/**
+ * Some tablets load no picture data for a video until it has been played.
+ * A muted, inline video may play without a tap, so play it for an instant.
+ */
+export async function primeVideo(video: HTMLVideoElement): Promise<void> {
+  try {
+    await video.play();
+  } catch {
+    // Not allowed or interrupted: seeking may still work.
+  }
+  video.pause();
+}
+
 async function decodeImage(blob: Blob): Promise<ImageBitmap | HTMLCanvasElement> {
   const bitmap = await createImageBitmap(blob);
   const side = Math.max(bitmap.width, bitmap.height);
@@ -345,6 +358,7 @@ export class MediaLibrary {
       video = makeVideoElement(item.url);
       this.thumbVideos.set(item.info.id, video);
       if (video.readyState < 1) await waitFor(video, 'loadedmetadata', 15_000);
+      await primeVideo(video);
     }
     const step = this.thumbStep(item.info);
     const time = Math.min(slot * step + Math.min(0.1, step / 2), Math.max(0, item.info.duration - 0.05));
