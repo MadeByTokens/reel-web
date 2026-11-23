@@ -262,10 +262,10 @@
 
     <div id="toast" role="status" hidden></div>
     <div id="tooltip" role="tooltip" hidden></div>
-    <input id="file-media" type="file" accept="video/*,image/*" multiple hidden />
-    <input id="file-layer" type="file" accept="video/*,image/*" hidden />
-    <input id="file-audio" type="file" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.aac,.flac" multiple hidden />
-    <input id="file-project" type="file" hidden />
+    <input id="file-media" type="file" accept="video/*,image/*" multiple class="file-input" tabindex="-1" aria-hidden="true" />
+    <input id="file-layer" type="file" accept="video/*,image/*" class="file-input" tabindex="-1" aria-hidden="true" />
+    <input id="file-audio" type="file" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.aac,.flac" multiple class="file-input" tabindex="-1" aria-hidden="true" />
+    <input id="file-project" type="file" class="file-input" tabindex="-1" aria-hidden="true" />
     <div id="fatal" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

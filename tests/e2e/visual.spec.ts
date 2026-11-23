@@ -15,7 +15,7 @@ test('screens', async ({ page }, info) => {
   await page.screenshot({ path: shot('03-editor-empty', tag) });
 
   const video = info.project.name.includes('chromium');
-  if (video) await addMedia(page, 'clip.webm', 'blue.webm');
+  if (video) await addMedia(page, 'clip.mp4', 'blue.webm');
   await addMedia(page, 'red.png', 'green.png');
   await addLayerMedia(page, 'green.png');
   await seek(page, 0.5);
