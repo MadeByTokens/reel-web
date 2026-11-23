@@ -164,11 +164,27 @@ export async function startApp(): Promise<void> {
   const statsItem = el<HTMLButtonElement>('menu-stats');
   let hudTimer = 0;
   let lastPainted = 0;
+  // What this browser can encode and decode, worked out once: the first thing to know when export misbehaves.
+  let codecs = 'codecs  checking';
+  const checkCodecs = async (): Promise<void> => {
+    const { canEncodeVideo, canEncodeAudio, canDecodeVideo, canDecodeAudio } = await import('mediabunny');
+    const mark = (ok: boolean, name: string): string => `${name}${ok ? '+' : '-'}`;
+    const [h264, aac, opus, dAvc, dHevc, dAac] = await Promise.all([
+      canEncodeVideo('avc', { width: 1920, height: 1080 }).catch(() => false),
+      canEncodeAudio('aac').catch(() => false),
+      canEncodeAudio('opus').catch(() => false),
+      canDecodeVideo('avc').catch(() => false),
+      canDecodeVideo('hevc').catch(() => false),
+      canDecodeAudio('aac').catch(() => false),
+    ]);
+    codecs = `encode  ${mark(h264, 'h264')} ${mark(aac, 'aac')} ${mark(opus, 'opus')}\ndecode  ${mark(dAvc, 'h264')} ${mark(dHevc, 'hevc')} ${mark(dAac, 'aac')}`;
+  };
   const setHud = (on: boolean): void => {
     hud.hidden = !on;
     statsItem.setAttribute('aria-checked', String(on));
     window.clearInterval(hudTimer);
     if (!on) return;
+    if (codecs.endsWith('checking')) void checkCodecs().catch(() => (codecs = 'codecs  unknown'));
     hudTimer = window.setInterval(() => {
       if (!ed.isOpen) return;
       const s = ed.player.stats;
@@ -183,6 +199,7 @@ export async function startApp(): Promise<void> {
         `clock   ${ed.player.audio.running ? 'audio' : 'timer'}`,
         `zoom    ${timeline.zoom().toFixed(0)} px/s`,
         `store   ${store.persistent ? 'device' : 'memory only'}`,
+        codecs,
       ].join('\n');
     }, 1000);
   };
