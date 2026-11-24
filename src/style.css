@@ -1385,3 +1385,149 @@ textarea {
 .field input:disabled {
   opacity: 0.35;
 }
+
+/* --- help illustrations ---------------------------------------------------------------- */
+
+.ill-defs {
+  position: absolute;
+}
+
+.ill {
+  display: block;
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+  margin: 2px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #17191d;
+}
+
+.ill text {
+  font: 600 10px system-ui, -apple-system, sans-serif;
+  fill: var(--dim);
+}
+
+.ill text.w,
+.ill .w {
+  fill: #fff;
+}
+
+.ill text.dk {
+  fill: #201a00;
+}
+
+.ill .a {
+  fill: #d9655b;
+}
+
+.ill .b {
+  fill: #4fa873;
+}
+
+.ill .c {
+  fill: #6a8fe8;
+}
+
+.ill .ly {
+  fill: #5b8def;
+}
+
+.ill .tx {
+  fill: #e6b422;
+}
+
+.ill .au {
+  fill: #1fa890;
+}
+
+.ill .bk {
+  fill: #000;
+}
+
+.ill .pg {
+  fill: #fff;
+}
+
+.ill .pn {
+  fill: #33373f;
+}
+
+.ill .k {
+  fill: var(--accent);
+}
+
+.ill .ok {
+  fill: #2f9e5b;
+}
+
+.ill .key {
+  fill: #2b2e35;
+  stroke: rgba(255, 255, 255, 0.35);
+}
+
+.ill .grip {
+  fill: #ffd23f;
+}
+
+.ill .sel {
+  fill: none;
+  stroke: #ffd23f;
+  stroke-width: 3;
+}
+
+.ill .jn {
+  fill: var(--accent);
+  stroke: #fff;
+}
+
+.ill .ph {
+  fill: none;
+  stroke: #ff4d4d;
+  stroke-width: 2;
+}
+
+.ill .ph-top {
+  fill: #ff4d4d;
+}
+
+.ill .wv {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.65);
+  stroke-width: 2;
+}
+
+.ill .g {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  marker-end: url(#ill-arrow);
+}
+
+.ill .d,
+.ill .d2 {
+  fill: none;
+  stroke: var(--dim);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ill .d2 {
+  stroke: rgba(255, 255, 255, 0.3);
+}
+
+.ill .dash {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.ill .no {
+  fill: none;
+  stroke: #ff4d4d;
+  stroke-width: 3;
+  stroke-linecap: round;
+}

@@ -100,8 +100,38 @@
         <button id="help-close" class="text-button primary">Close</button>
       </header>
       <div class="help-body">
+        <svg class="ill-defs" width="0" height="0" aria-hidden="true" focusable="false">
+          <defs>
+            <marker id="ill-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#fff"/></marker>
+            <g id="ill-touch"><circle r="9" fill="rgba(255,255,255,0.3)" stroke="#fff" stroke-width="1.5"/></g>
+            <g id="ill-pic" fill="rgba(255,255,255,0.6)"><path d="M0 14 6 5l4 5 3-3 7 7Z"/><circle cx="15" cy="3" r="2"/></g>
+          </defs>
+        </svg>
         <section>
           <h2>Adding things</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="A timeline with the main track on top, layers under it and sound at the bottom">
+            <g class="w">
+              <path transform="translate(10 31) scale(0.7)" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm0 2v10h16V7H4Zm6 2 5 3-5 3V9Z"/>
+              <path transform="translate(10 67) scale(0.7)" d="m12 3 9 5-9 5-9-5 9-5Zm-6.3 8.5L12 15l6.3-3.5L21 13l-9 5-9-5 2.7-1.5Zm0 4L12 19l6.3-3.5L21 17l-9 5-9-5 2.7-1.5Z"/>
+              <path transform="translate(10 95) scale(0.7)" d="M10 4h9v3h-6v9.5a3.5 3.5 0 1 1-2-3.2V4h-1Zm-1.500 11a1.500 1.500 0 1 0 0 3 1.500 1.500 0 0 0 0-3Z"/>
+            </g>
+            <text class="w" x="32" y="43">Media</text>
+            <text class="w" x="32" y="79">Layer</text>
+            <text class="w" x="32" y="107">Audio</text>
+            <rect class="a" x="84" y="20" width="72" height="38" rx="4"/>
+            <rect class="b" x="158" y="20" width="88" height="38" rx="4"/>
+            <rect class="c" x="248" y="20" width="60" height="38" rx="4"/>
+            <use href="#ill-pic" x="90" y="38"/>
+            <use href="#ill-pic" x="164" y="38"/>
+            <use href="#ill-pic" x="254" y="38"/>
+            <rect class="ly" x="128" y="66" width="74" height="18" rx="4"/>
+            <rect class="tx" x="214" y="66" width="62" height="18" rx="4"/>
+            <text class="dk" x="221" y="79">Text</text>
+            <rect class="au" x="84" y="94" width="176" height="18" rx="4"/>
+            <path class="wv" d="M90 103v0m4-3v6m4-9v12m4-10v8m4-5v2m4-6v10m4-12v14m4-9v4m4-7v10m4-11v12m4-8v4m4-5v6m4-10v14m4-9v4m4-6v8m4-11v14m4-8v2m4-5v8m4-10v12m4-7v2m4-5v8m4-11v14m4-9v4m4-6v8m4-10v12m4-7v2m4-4v6m4-9v12m4-8v4m4-6v8m4-10v12m4-7v2m4-4v6m4-8v10m4-6v2m4-4v6m4-5v4m4-3v2"/>
+            <path class="ph" d="M128 10v112"/>
+            <path class="ph-top" d="M122 8h12l-6 8Z"/>
+          </svg>
           <ul>
             <li><b>Media</b> adds videos and pictures to the main track, one after another.</li>
             <li><b>Layer</b> puts a picture, a video, <b>Text</b> or a <b>Sticker</b> on top of the main track, starting at the playhead.</li>
@@ -110,18 +140,80 @@
         </section>
         <section>
           <h2>The timeline</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="A selected clip with a finger dragging the handle at its end, and two fingers pinching to zoom">
+            <path class="d" d="M20 14h280M40 10v8M80 10v8M120 10v8M160 10v8M200 10v8M240 10v8M280 10v8"/>
+            <rect class="a" x="20" y="26" width="76" height="38" rx="4"/>
+            <rect class="c" x="226" y="26" width="74" height="38" rx="4"/>
+            <rect class="b" x="110" y="26" width="102" height="38" rx="2"/>
+            <use href="#ill-pic" x="26" y="44"/>
+            <use href="#ill-pic" x="116" y="44"/>
+            <use href="#ill-pic" x="232" y="44"/>
+            <path class="grip" d="M104 26h6v38h-6a6 6 0 0 1-6-6V32a6 6 0 0 1 6-6ZM212 26h6a6 6 0 0 1 6 6v26a6 6 0 0 1-6 6h-6Z"/>
+            <rect class="sel" x="110" y="27.500" width="102" height="35"/>
+            <path class="ph" d="M160 6v64"/>
+            <use href="#ill-touch" x="218" y="45"/>
+            <path class="g" d="M232 45h30"/>
+            <path class="g" d="M204 45h-30"/>
+            <text class="w" x="218" y="80" text-anchor="middle">drag an end to trim</text>
+            <use href="#ill-touch" x="140" y="104"/>
+            <use href="#ill-touch" x="180" y="104"/>
+            <path class="g" d="M126 104h-30"/>
+            <path class="g" d="M194 104h30"/>
+            <text class="w" x="236" y="108">pinch to zoom</text>
+          </svg>
           <ul>
             <li>Drag the timeline left and right. The line in the middle is the playhead; the preview shows that moment.</li>
             <li>Pinch with two fingers to zoom the timeline in and out.</li>
             <li>Tap a clip to select it. Drag the handles at its ends to trim it.</li>
             <li>Press and hold a clip, then drag, to move it or change the order.</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Cutting and joining</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="A clip cut in two at the playhead, and the small square between two clips that sets the transition">
+            <rect class="a" x="20" y="22" width="118" height="34" rx="4"/>
+            <rect class="a" x="144" y="22" width="92" height="34" rx="4"/>
+            <use href="#ill-pic" x="26" y="38"/>
+            <use href="#ill-pic" x="150" y="38"/>
+            <path class="ph" d="M141 6v56"/>
+            <path class="w" transform="translate(246 28) scale(0.9)" d="M7 4a3 3 0 0 1 2.800 4L12 10.200 18.500 4H21L10 14.800A3 3 0 1 1 8.500 13.400L10 12l-1.600-1.600A3 3 0 1 1 7 4Zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm0 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm7.500-1.800L21 20h-2.500l-5.500-5.300 1.500-1.500Z"/>
+            <text class="w" x="272" y="43">Split</text>
+            <rect class="b" x="20" y="80" width="108" height="34" rx="4"/>
+            <rect class="c" x="128" y="80" width="108" height="34" rx="4"/>
+            <use href="#ill-pic" x="26" y="96"/>
+            <use href="#ill-pic" x="206" y="96"/>
+            <rect class="jn" x="117" y="86" width="22" height="22" rx="5"/>
+            <path class="w" transform="translate(120 89) scale(0.667)" d="M3 6h7v12H3V6Zm11 0h7v12h-7V6Zm2 2v8h3V8h-3Zm-5 3h2v2h-2v-2Z"/>
+            <use href="#ill-touch" x="143" y="112"/>
+            <text class="w" x="246" y="101">Transition</text>
+          </svg>
+          <ul>
             <li><b>Trim/Split</b> cuts the selected clip at the playhead, or removes the part before or after it.</li>
-            <li>Layers and sounds stay with the main-track clip they sit over: when that clip moves, they move too.</li>
             <li>The small square between two main-track clips sets the <b>Transition</b> from one to the next.</li>
+            <li>Layers and sounds stay with the main-track clip they sit over: when that clip moves, they move too.</li>
           </ul>
         </section>
         <section>
           <h2>The preview</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="A layer in the preview with a round handle to turn it and a corner handle to resize it">
+            <rect class="bk" x="50" y="10" width="196" height="110"/>
+            <rect class="a" x="50" y="10" width="196" height="110" opacity="0.85"/>
+            <g fill="rgba(255,255,255,0.35)"><path d="M50 120 110 62l40 36 26-22 70 44Z"/><circle cx="212" cy="36" r="11"/></g>
+            <rect class="ly" x="108" y="38" width="70" height="52"/>
+            <rect class="dash" x="108" y="38" width="70" height="52"/>
+            <circle class="w" cx="178" cy="38" r="9"/>
+            <circle class="w" cx="178" cy="90" r="9"/>
+            <path class="bk" transform="translate(172 32) scale(0.5)" d="M12 4V1l4.500 4L12 9V6a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8Z"/>
+            <path class="bk" transform="translate(172 84) scale(0.5)" d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z"/>
+            <use href="#ill-touch" x="134" y="66"/>
+            <path class="g" d="M122 74 96 92"/>
+            <circle class="k" cx="286" cy="100" r="18"/>
+            <path class="w" transform="translate(275 89) scale(0.92)" d="M8 5v14l11-7L8 5Z"/>
+            <text class="w" x="286" y="30" text-anchor="middle">turn</text>
+            <path class="d" d="M270 27h-76l-8 6"/>
+            <text class="w" x="286" y="68" text-anchor="middle">resize</text>
+            <path class="d" d="M266 65h-66l-12 18"/>
+          </svg>
           <ul>
             <li>Select a layer, then drag it in the preview to move it. Drag the corner arrow to resize and the round arrow to turn. Two fingers do both at once.</li>
             <li>Tap <b>Play</b> to watch. Tap again to stop.</li>
@@ -129,6 +221,28 @@
         </section>
         <section>
           <h2>Effects</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="Three effects: a layer gliding between two keyframes, a green background removed, and a picture with a colour look">
+            <rect class="bk" x="12" y="14" width="92" height="62" rx="3"/>
+            <rect class="dash" x="20" y="46" width="22" height="22"/>
+            <rect class="ly" x="70" y="22" width="26" height="26"/>
+            <path class="g" d="M44 54 66 40"/>
+            <rect class="ly" x="12" y="84" width="92" height="12" rx="3"/>
+            <path class="w" d="M24 85.500 28.500 90 24 94.500 19.500 90ZM92 85.500 96.500 90 92 94.500 87.500 90Z"/>
+            <text class="w" x="58" y="116" text-anchor="middle">Keyframes</text>
+            <rect x="116" y="14" width="40" height="62" rx="3" fill="#18c33a"/>
+            <g class="w"><circle cx="136" cy="36" r="8"/><path d="M122 76a14 22 0 0 1 28 0Z"/></g>
+            <path class="g" d="M160 45h8"/>
+            <rect class="c" x="172" y="14" width="40" height="62" rx="3"/>
+            <path fill="rgba(255,255,255,0.3)" d="M172 76 186 48l10 12 6-6 10 14v8Z"/>
+            <g class="w"><circle cx="192" cy="36" r="8"/><path d="M178 76a14 22 0 0 1 28 0Z"/></g>
+            <text class="w" x="164" y="116" text-anchor="middle">Chroma Key</text>
+            <path class="b" d="M224 14h84L224 76Z"/>
+            <path d="M308 14v62h-84Z" fill="#a8895f"/>
+            <path d="M308 14 224 76" stroke="#fff" stroke-width="1.500"/>
+            <path fill="rgba(255,255,255,0.45)" d="M224 76 250 44l18 18 10-9 30 23Z"/>
+            <circle cx="288" cy="30" r="7" fill="rgba(255,255,255,0.45)"/>
+            <text class="w" x="266" y="116" text-anchor="middle">Color Filter</text>
+          </svg>
           <ul>
             <li><b>Keyframes</b> make a layer move: add one, move the playhead, then move, resize or turn the layer. It glides between the two.</li>
             <li><b>Chroma Key</b> removes one colour from a layer, such as a green background.</li>
@@ -137,12 +251,43 @@
         </section>
         <section>
           <h2>Finishing</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="The timeline turning into a video file">
+            <rect class="a" x="16" y="36" width="34" height="26" rx="3"/>
+            <rect class="b" x="52" y="36" width="42" height="26" rx="3"/>
+            <rect class="c" x="96" y="36" width="24" height="26" rx="3"/>
+            <rect class="ly" x="40" y="68" width="46" height="10" rx="3"/>
+            <rect class="au" x="16" y="84" width="88" height="10" rx="3"/>
+            <path class="g" d="M134 65h34"/>
+            <rect class="pn" x="134" y="78" width="40" height="6" rx="3"/>
+            <rect class="k" x="134" y="78" width="26" height="6" rx="3"/>
+            <path class="pn" d="M190 24h44l18 18v64a4 4 0 0 1-4 4h-58a4 4 0 0 1-4-4V28a4 4 0 0 1 4-4Z"/>
+            <path class="d2" d="M234 24v18h18"/>
+            <circle class="k" cx="219" cy="70" r="16"/>
+            <path class="w" transform="translate(209 60) scale(0.84)" d="M8 5v14l11-7L8 5Z"/>
+            <text class="w" x="219" y="102" text-anchor="middle">video</text>
+            <rect class="k" x="266" y="54" width="42" height="24" rx="8"/>
+            <text class="w" x="287" y="70" text-anchor="middle">Save</text>
+          </svg>
           <ul>
             <li><b>Export</b> makes a video file. Keep Reel open and on screen until it finishes, then tap <b>Save</b>.</li>
           </ul>
         </section>
         <section>
           <h2>Keeping your work</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="Work is kept on the device, nothing goes to the cloud, and a project file can be saved as a backup">
+            <rect class="pn" x="20" y="24" width="112" height="82" rx="8"/>
+            <rect class="bk" x="28" y="32" width="96" height="66" rx="2"/>
+            <circle class="ok" cx="76" cy="65" r="17"/>
+            <path class="w" transform="translate(62 51) scale(1.160)" d="m5 12.500 1.600-1.600 3.400 3.400 7.400-7.400L19 8.500l-9 9-5-5Z"/>
+            <text class="w" x="76" y="122" text-anchor="middle">saved on this device</text>
+            <path class="d" d="M168 52a9 9 0 0 1 2-17 13 13 0 0 1 25-3 10 10 0 0 1 5 20Z"/>
+            <path class="no" d="M160 60 208 20"/>
+            <path class="g" d="M146 86h66"/>
+            <path class="pn" d="M232 30h38l16 16v56a4 4 0 0 1-4 4h-50a4 4 0 0 1-4-4V34a4 4 0 0 1 4-4Z"/>
+            <path class="d2" d="M270 30v16h16"/>
+            <text class="w" x="257" y="82" text-anchor="middle">.reel</text>
+            <text class="w" x="257" y="122" text-anchor="middle">backup file</text>
+          </svg>
           <ul>
             <li>Everything is saved on this device as you edit. Nothing is sent anywhere.</li>
             <li>Add Reel to the Home Screen so the browser never clears your projects.</li>
@@ -151,6 +296,28 @@
         </section>
         <section>
           <h2>Keys</h2>
+          <svg class="ill" viewBox="0 0 320 130" role="img" aria-label="Keyboard keys, and a finger held on a button showing what the button does">
+            <g class="key">
+              <rect x="16" y="26" width="84" height="26" rx="6"/>
+              <rect x="108" y="26" width="26" height="26" rx="6"/>
+              <rect x="16" y="62" width="26" height="26" rx="6"/>
+              <rect x="50" y="62" width="26" height="26" rx="6"/>
+              <rect x="108" y="62" width="44" height="26" rx="6"/>
+            </g>
+            <text class="w" x="58" y="43" text-anchor="middle">Space</text>
+            <text class="w" x="121" y="43" text-anchor="middle">S</text>
+            <path class="g" d="M36 75h-12"/>
+            <path class="g" d="M56 75h12"/>
+            <text class="w" x="130" y="79" text-anchor="middle">Delete</text>
+            <text x="16" y="110">play · split · step · remove</text>
+            <rect class="pn" x="212" y="20" width="92" height="26" rx="8"/>
+            <text class="w" x="258" y="37" text-anchor="middle">Trim/Split</text>
+            <path class="pn" d="M250 46h16l-8 8Z"/>
+            <rect class="key" x="238" y="60" width="40" height="40" rx="10"/>
+            <path class="w" transform="translate(246 68)" d="M7 4a3 3 0 0 1 2.800 4L12 10.200 18.500 4H21L10 14.800A3 3 0 1 1 8.500 13.400L10 12l-1.600-1.600A3 3 0 1 1 7 4Zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm0 9a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm7.500-1.800L21 20h-2.500l-5.500-5.300 1.500-1.500Z"/>
+            <use href="#ill-touch" x="272" y="94"/>
+            <text x="258" y="118" text-anchor="middle">press and hold</text>
+          </svg>
           <ul>
             <li>Space plays, arrows step one frame, S splits, Delete removes the selected clip, Ctrl+Z and Ctrl+Shift+Z undo and redo.</li>
             <li>Press and hold any button to see what it does.</li>

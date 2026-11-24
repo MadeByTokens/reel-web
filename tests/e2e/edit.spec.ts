@@ -378,3 +378,22 @@ test.describe('keeping work', () => {
     await expect(page.locator('.tile')).toHaveCount(1);
   });
 });
+
+test.describe('help', () => {
+  test('opens from the projects screen with a picture for every section', async ({ page }) => {
+    await openApp(page);
+    await page.locator('#home-help').click();
+    await expect(page.getByRole('heading', { name: 'How Reel works' })).toBeVisible();
+    const pictures = page.locator('#help .ill');
+    await expect(pictures).toHaveCount(8);
+    for (const picture of await pictures.all()) {
+      await picture.scrollIntoViewIfNeeded();
+      const box = (await picture.boundingBox())!;
+      expect(box.width).toBeGreaterThan(250);
+      expect(box.height).toBeGreaterThan(100);
+      expect((await picture.getAttribute('aria-label'))!.length).toBeGreaterThan(20);
+    }
+    await page.locator('#help-close').click();
+    await expect(page.locator('#help')).toBeHidden();
+  });
+});
