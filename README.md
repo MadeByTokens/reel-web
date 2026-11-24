@@ -68,6 +68,17 @@ handwriting, reverse, 4K.
 | Sound | Decoded a little ahead of the playhead with [Mediabunny](https://mediabunny.dev) and WebCodecs, and scheduled on one Web Audio context whose clock drives the picture. |
 | Export | The same compositor, fed exact frames from the decoder, encodes with WebCodecs; sound is mixed with an offline audio context; Mediabunny writes the file straight to storage. |
 
+## When a device runs short
+
+A browser gives a page no reading of the memory it has left and no warning before closing it, so Reel does not try to predict a crash. It keeps what it holds in memory bounded, and uses the three things every browser does offer:
+
+- **What the device says about itself.** Reported memory, where the browser gives it, puts the device in one of three classes; without it the middle one is assumed. A video larger than the class allows, or one the browser's own answer says it cannot play smoothly, is added with a warning, not refused.
+- **Free storage.** A file is refused before any of it is copied when there is no room for it, and Export is disabled with both numbers when the video would not fit. Where the browser gives Reel no storage at all, an export has to fit in memory and is held to the class's limit.
+- **What happened last time.** An export leaves a note while it runs. A note still there at the next start means the page was closed in the middle: Reel says so, starts the next export one size lower, and marks the size that failed until an export that large succeeds.
+
+Nothing here is tuned to a particular model.
+
+
 ## Known limits
 
 - The browser must be able to play a file for it to be used. HDR footage is shown however

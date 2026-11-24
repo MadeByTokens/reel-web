@@ -181,7 +181,9 @@ export function installPanel(ed: Editor, hooks: PanelHooks): void {
         progress((i + 1) / files.length);
       }
     });
+    const advice = added.map((info) => ed.media.takeAdvice(info.id)).find((text) => text);
     if (failed) toast(failed);
+    else if (advice) toast(advice);
     if (!added.length) return;
     const at = ed.time;
     let last: Clip | null = null;

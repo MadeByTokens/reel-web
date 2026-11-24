@@ -1,6 +1,8 @@
 // The media of the open project: the stored files, what is known about them,
 // and ways to get pictures and sound out of them.
 
+import { videoAdvice } from '../util/advice';
+import { budget, fits, freeSpace, megabytes } from '../util/device';
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, type InputVideoTrack } from 'mediabunny';
 import { newId, type MediaInfo } from '../doc/model';
 import type { Store } from '../store/store';
@@ -163,6 +165,38 @@ async function probe(blob: Blob, name: string): Promise<Probe> {
   }
 }
 
+/**
+ * Whether this device says it can play a video of this kind without dropping
+ * frames. Null when the file or the browser gives no answer.
+ */
+async function playsSmoothly(blob: Blob, width: number, height: number, duration: number): Promise<boolean | null> {
+  const capabilities = navigator.mediaCapabilities;
+  if (!capabilities?.decodingInfo) return null;
+  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    const codec = await track?.getCodecParameterString();
+    if (!track || !codec) return null;
+    const container = (await input.getMimeType()).split(';')[0]!.replace(/^audio\//, 'video/');
+    const stats = await track.computePacketStats(60).catch(() => null);
+    const result = await capabilities.decodingInfo({
+      type: 'file',
+      video: {
+        contentType: `${container}; codecs="${codec}"`,
+        width,
+        height,
+        bitrate: Math.max(1, Math.round((blob.size * 8) / Math.max(0.1, duration))),
+        framerate: stats && stats.averagePacketRate > 0 ? stats.averagePacketRate : 30,
+      },
+    });
+    return result.supported ? result.smooth : null;
+  } catch {
+    return null;
+  } finally {
+    input.dispose();
+  }
+}
+
 function extension(name: string): string {
   const match = /\.([A-Za-z0-9]{1,8})$/.exec(name);
   return match ? match[1]!.toLowerCase() : 'bin';
@@ -197,6 +231,15 @@ export class MediaLibrary {
     private readonly store: Store,
     private readonly folder: string,
   ) {}
+
+  /** Advice about files added in this session, by media id; read once by whoever shows it. */
+  private readonly advice = new Map<string, string>();
+
+  takeAdvice(id: string): string {
+    const text = this.advice.get(id) ?? '';
+    this.advice.delete(id);
+    return text;
+  }
 
   private path(info: MediaInfo): string {
     return `${this.folder}/media/${info.id}.${extension(info.name)}`;
@@ -298,6 +341,11 @@ export class MediaLibrary {
       mime: /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,60}$/i.test(file.type) ? file.type : '',
       ...found,
     };
+    // Asked first, so that a file with no room is refused before any of it is copied.
+    const free = this.store.persistent ? await freeSpace() : null;
+    if (!fits(file.size, free)) {
+      throw new Error(`There is not enough storage left for this file: it is ${megabytes(file.size)} and ${megabytes(free ?? 0)} is free`);
+    }
     try {
       await this.store.write(this.path(info), file, onProgress);
     } catch (err) {
@@ -311,6 +359,11 @@ export class MediaLibrary {
       throw new Error('The file could not be copied completely');
     }
     await this.adopt(info, stored);
+    if (info.kind === 'video') {
+      const smooth = await playsSmoothly(stored, info.width, info.height, info.duration);
+      const advice = videoAdvice(info.name, info.width, info.height, smooth, budget().videoPixels);
+      if (advice) this.advice.set(info.id, advice);
+    }
     return info;
   }
 
@@ -383,6 +436,8 @@ export class MediaLibrary {
       // Fall through to decoding the whole file.
     }
     if (item.blob.size > MAX_WHOLE_DECODE) return null;
+    // Decoded whole, sound takes 8 bytes for every sample of both channels.
+    if (item.info.duration * 48000 * 8 > budget().memoryFile) return null;
     try {
       const context = new OfflineAudioContext(2, 1, 48000);
       const buffer = await context.decodeAudioData(await item.blob.arrayBuffer());

@@ -3,6 +3,8 @@
 import { el, type Editor } from '../editor';
 import { exportProject } from '../media/exporter';
 import { busy, errorText, safeName, saveFile, toast } from '../ui/feedback';
+import { exportProblem } from '../util/advice';
+import { budget, freeSpace, megabytes, type Watch } from '../util/device';
 
 const HEIGHTS = [1080, 720, 540, 360];
 const RATES = [30, 25, 24, 15];
@@ -11,7 +13,7 @@ interface WakeLockLike {
   release(): Promise<void>;
 }
 
-export function installExport(ed: Editor): { open(): void } {
+export function installExport(ed: Editor, watch: Watch): { open(): void } {
   const dialog = el<HTMLDivElement>('export');
   const nameInput = el<HTMLInputElement>('export-name');
   const resolution = el<HTMLDivElement>('export-resolution');
@@ -19,8 +21,11 @@ export function installExport(ed: Editor): { open(): void } {
   const quality = el<HTMLInputElement>('export-quality');
   const qualityValue = el<HTMLOutputElement>('export-quality-value');
   const info = el<HTMLParagraphElement>('export-info');
+  const go = el<HTMLButtonElement>('export-go');
   let height = 1080;
   let fps = 30;
+  /** Storage free when the dialog opened; null while unknown. */
+  let free: number | null = null;
 
   /** Output size: the chosen number is the short side, as in "1080p". */
   function size(): { width: number; height: number } {
@@ -58,15 +63,25 @@ export function installExport(ed: Editor): { open(): void } {
     syncRes();
     syncFps();
     const rate = bitrate();
-    const megabytes = ((rate + 192_000) * ed.duration) / 8 / 1e6;
+    const bytes = ((rate + 192_000) * ed.duration) / 8;
     const s = size();
     qualityValue.value = `${(rate / 1e6).toFixed(1)} Mbps`;
-    info.textContent = `${s.width} × ${s.height}, about ${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB. Keep Reel open and on screen while it works.`;
+    const problem = exportProblem(bytes, ed.store.persistent, free, budget().memoryFile);
+    info.classList.toggle('blocked', !!problem);
+    go.disabled = !!problem;
+    info.textContent = problem || `${s.width} × ${s.height}, about ${megabytes(bytes)}. Keep Reel open and on screen while it works.`;
+    const failedAt = watch.limit('export');
+    if (!problem && failedAt !== null && s.width * s.height >= failedAt) {
+      const caution = document.createElement('span');
+      caution.className = 'caution';
+      caution.textContent = 'Reel closed during an export this large on this device before. A lower resolution is safer.';
+      info.append(caution);
+    }
   }
   quality.addEventListener('input', sync);
 
   el('export-cancel').addEventListener('click', () => (dialog.hidden = true));
-  el('export-go').addEventListener('click', () => {
+  go.addEventListener('click', () => {
     dialog.hidden = true;
     void run();
   });
@@ -87,17 +102,22 @@ export function installExport(ed: Editor): { open(): void } {
       await hold();
       await ed.settled();
       const started = performance.now();
+      const made = size();
+      // If the page is closed for using too much memory, this note is what is left to say so.
+      watch.begin({ what: 'export', detail: `${height}p`, pixels: made.width * made.height });
       const result = await busy(
         'Exporting',
         (progress) => exportProject(ed.project, ed.media, ed.store, { ...size(), fps, bitrate: bitrate() }, progress, abort.signal),
         abort,
       );
+      watch.succeeded('export', made.width * made.height);
       const took = Math.round((performance.now() - started) / 1000);
       await saveFile(result.blob, `${name}.${result.extension}`, [`Made in ${took} s.`, ...result.notes]);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') toast('Export cancelled');
       else toast(errorText(err, 'The video could not be made'));
     } finally {
+      watch.end();
       document.removeEventListener('visibilitychange', hold);
       await (lock as WakeLockLike | null)?.release().catch(() => {});
     }
@@ -119,11 +139,23 @@ export function installExport(ed: Editor): { open(): void } {
       ed.player.pause();
       nameInput.value = ed.project.name;
       const short = Math.min(ed.project.width, ed.project.height);
-      height = HEIGHTS.find((h) => h <= short) ?? 360;
+      const fitting = HEIGHTS.filter((h) => h <= short);
+      // Start below the size that closed the app last time, when there is such a size.
+      const failedAt = watch.limit('export');
+      const safe = fitting.filter((h) => {
+        const k = h / short;
+        return failedAt === null || ed.project.width * k * ed.project.height * k < failedAt;
+      });
+      height = safe[0] ?? fitting[fitting.length - 1] ?? 360;
       fps = 30;
       quality.value = '50';
+      free = null;
       sync();
       dialog.hidden = false;
+      void freeSpace().then((bytes) => {
+        free = bytes;
+        if (!dialog.hidden) sync();
+      });
     },
   };
 }

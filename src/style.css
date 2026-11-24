@@ -384,10 +384,14 @@ button:disabled {
   left: 50%;
   bottom: calc(var(--bottom) + env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 20px;
   background: rgba(15, 16, 19, 0.92);
   border: 1px solid var(--line);
+  text-align: center;
+  line-height: 1.35;
   pointer-events: none;
 }
 
@@ -1530,4 +1534,14 @@ textarea {
   stroke: #ff4d4d;
   stroke-width: 3;
   stroke-linecap: round;
+}
+
+#export-info.blocked {
+  color: #ff8a80;
+}
+
+#export-info .caution {
+  display: block;
+  margin-top: 6px;
+  color: var(--select);
 }

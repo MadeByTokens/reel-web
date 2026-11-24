@@ -14,6 +14,7 @@ import { closePopover, togglePopover } from './ui/popover';
 import { installStage } from './ui/stage';
 import { formatTime, installTimeline } from './ui/timeline';
 import { installTooltips } from './ui/tooltips';
+import { Watch } from './util/device';
 
 declare global {
   interface Window {
@@ -109,7 +110,12 @@ export async function startApp(): Promise<void> {
   }
   const home = installHome(store, openProject, showHelp);
 
-  const exporter = installExport(ed);
+  // Heavy work leaves a note while it runs; one still there now means the page went away in the middle.
+  const watch = new Watch('reel');
+  const unfinished = watch.takeUnfinished();
+  // Closing the page on purpose is not a failure to learn from.
+  window.addEventListener('pagehide', () => watch.end());
+  const exporter = installExport(ed, watch);
   const recorder = installRecord(ed);
   const timeline = installTimeline(ed);
   installStage(ed);
@@ -277,4 +283,7 @@ export async function startApp(): Promise<void> {
   };
 
   await home.show().catch((err: unknown) => toast(errorText(err, 'Projects could not be listed')));
+  if (unfinished?.what === 'export') {
+    toast(`Reel closed during the last export (${unfinished.detail}). Your project is safe. If Reel closed by itself, the device ran out of memory: export at a lower resolution.`);
+  }
 }

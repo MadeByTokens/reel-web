@@ -10,7 +10,8 @@ export function toast(message: string): void {
   node.textContent = message;
   node.hidden = false;
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (node.hidden = true), 4000);
+  // Long enough to read: four seconds, and more for more than a line.
+  toastTimer = window.setTimeout(() => (node.hidden = true), 4000 + Math.max(0, message.length - 50) * 60);
 }
 
 export function errorText(err: unknown, fallback: string): string {
